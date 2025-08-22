@@ -45,6 +45,11 @@ packages/vscode-ide-companion/*.vsix
 .gcp/
 .history/
 .scout/index.db
-*.json
 .env
 .env.*
+
+# GHA credentials
+gha-creds-*.json
+
+# Service account keys and credentials
+*.json
