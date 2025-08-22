@@ -59,6 +59,7 @@ export interface CliArgs {
   showMemoryUsage: boolean | undefined;
   show_memory_usage: boolean | undefined;
   yolo: boolean | undefined;
+  dangerouslySkipPermissions: boolean | undefined;
   approvalMode: string | undefined;
   telemetry: boolean | undefined;
   checkpointing: boolean | undefined;
@@ -151,6 +152,12 @@ export async function parseArguments(): Promise<CliArgs> {
             'Automatically accept all actions (aka YOLO mode, see https://www.youtube.com/watch?v=xvFZjo5PgG0 for more details)?',
           default: false,
         })
+        .option('dangerously-skip-permissions', {
+          type: 'boolean',
+          description:
+            '⚠️  DANGER ZONE: Automatically enable YOLO mode and skip all permission prompts. Use with extreme caution!',
+          default: false,
+        })
         .option('approval-mode', {
           type: 'string',
           choices: ['default', 'auto_edit', 'yolo'],
@@ -238,6 +245,11 @@ export async function parseArguments(): Promise<CliArgs> {
           if (argv.yolo && argv['approvalMode']) {
             throw new Error(
               'Cannot use both --yolo (-y) and --approval-mode together. Use --approval-mode=yolo instead.',
+            );
+          }
+          if (argv['dangerously-skip-permissions'] && (argv.yolo || argv['approvalMode'])) {
+            throw new Error(
+              'Cannot use --dangerously-skip-permissions with --yolo or --approval-mode. It automatically enables YOLO mode.',
             );
           }
           return true;
@@ -382,7 +394,12 @@ export async function loadCliConfig(
 
   // Determine approval mode with backward compatibility
   let approvalMode: ApprovalMode;
-  if (argv.approvalMode) {
+  
+  // The dangerous flag overrides everything else!
+  if (argv['dangerouslySkipPermissions']) {
+    approvalMode = ApprovalMode.YOLO;
+    console.warn('⚠️  DANGER ZONE: --dangerously-skip-permissions enabled! YOLO mode activated - all actions will be auto-approved!');
+  } else if (argv.approvalMode) {
     // New --approval-mode flag takes precedence
     switch (argv.approvalMode) {
       case 'yolo':

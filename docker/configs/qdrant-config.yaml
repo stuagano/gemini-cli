@@ -1,0 +1,51 @@
+# Qdrant production configuration for Gemini Enterprise
+
+service:
+  host: 0.0.0.0
+  http_port: 6333
+  grpc_port: 6334
+  enable_cors: false
+  cors_origins: []
+
+storage:
+  # Storage backend configuration
+  storage_path: "/qdrant/storage"
+  
+  # Write-ahead log configuration
+  wal:
+    wal_capacity_mb: 32
+    wal_segments_ahead: 0
+  
+  # Performance settings
+  performance:
+    max_search_threads: 0  # Use all available cores
+    max_optimization_threads: 0  # Use all available cores
+  
+  # Quantization for memory efficiency
+  quantization:
+    always_ram: false
+
+# Cluster configuration (for future scaling)
+cluster:
+  enabled: false
+
+# Service configuration
+service:
+  # Set maximum request size to 10MB
+  max_request_size_mb: 10
+  
+  # Set maximum concurrent requests
+  max_concurrent_requests: 100
+
+# Telemetry configuration
+telemetry:
+  # Disable telemetry in production
+  disabled: true
+
+# Security settings
+tls:
+  # TLS configuration would go here if needed
+  enabled: false
+
+# Logging
+log_level: INFO

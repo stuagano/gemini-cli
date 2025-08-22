@@ -1,0 +1,44 @@
+# Testing dependencies for Gemini Enterprise Architect
+
+# Core testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+pytest-timeout>=2.1.0
+pytest-xdist>=3.3.0  # Parallel test execution
+
+# Mocking and fixtures
+faker>=19.0.0
+factory-boy>=3.3.0
+responses>=0.23.0  # Mock HTTP responses
+aioresponses>=0.7.4  # Mock async HTTP
+
+# Code quality
+black>=23.0.0
+isort>=5.12.0
+flake8>=6.0.0
+mypy>=1.4.0
+pylint>=2.17.0
+
+# Coverage
+coverage>=7.2.0
+codecov>=2.1.13
+
+# Performance testing
+pytest-benchmark>=4.0.0
+locust>=2.15.0  # Load testing
+
+# Security testing
+bandit>=1.7.5
+safety>=2.3.5
+
+# Documentation testing
+pytest-doctestplus>=1.0.0
+
+# Test data
+pydantic-factories>=1.17.0
+
+# API testing
+httpx>=0.24.0
+websocket-client>=1.6.0

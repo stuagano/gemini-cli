@@ -1,0 +1,448 @@
+name: 'Gemini AI Code Review'
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, develop]
+  
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to analyze'
+        required: false
+        type: string
+      analysis_depth:
+        description: 'Analysis depth'
+        required: false
+        default: 'standard'
+        type: choice
+        options:
+          - 'quick'
+          - 'standard'
+          - 'comprehensive'
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  statuses: write
+
+env:
+  PYTHON_VERSION: '3.11'
+  AGENT_SERVER_PORT: 8000
+  CACHE_KEY_PREFIX: 'gemini-review-v1'
+
+jobs:
+  # Start agent server
+  start-agent-server:
+    name: 'Start Agent Server'
+    runs-on: ubuntu-latest
+    outputs:
+      server-url: ${{ steps.server.outputs.url }}
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: 'Setup Python'
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: 'Cache Python dependencies'
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ env.CACHE_KEY_PREFIX }}-${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ env.CACHE_KEY_PREFIX }}-${{ runner.os }}-pip-
+      
+      - name: 'Install dependencies'
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-test.txt
+      
+      - name: 'Start agent server in background'
+        id: server
+        run: |
+          cd src
+          python start_server.py &
+          SERVER_PID=$!
+          echo "server_pid=$SERVER_PID" >> $GITHUB_OUTPUT
+          echo "url=http://localhost:${{ env.AGENT_SERVER_PORT }}" >> $GITHUB_OUTPUT
+          
+          # Wait for server to be ready
+          timeout=60
+          while ! curl -s "http://localhost:${{ env.AGENT_SERVER_PORT }}/api/v1/health" > /dev/null; do
+            sleep 2
+            timeout=$((timeout - 2))
+            if [ $timeout -le 0 ]; then
+              echo "❌ Agent server failed to start"
+              exit 1
+            fi
+          done
+          echo "✅ Agent server is ready"
+      
+      - name: 'Keep server running'
+        run: |
+          # Keep the server running for the duration of dependent jobs
+          while jobs=$(curl -s "${{ github.api_url }}/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}"); do
+            if echo "$jobs" | jq -e '.jobs[] | select(.name != "Start Agent Server" and (.status == "queued" or .status == "in_progress"))' > /dev/null; then
+              sleep 10
+            else
+              break
+            fi
+          done
+
+  # Multi-agent code review
+  ai-code-review:
+    name: 'AI-Powered Code Review'
+    runs-on: ubuntu-latest
+    needs: start-agent-server
+    strategy:
+      matrix:
+        agent: [qa, architect, developer]
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: 'Get changed files'
+        id: changed-files
+        uses: tj-actions/changed-files@v40
+        with:
+          files: |
+            **/*.py
+            **/*.js
+            **/*.ts
+            **/*.jsx
+            **/*.tsx
+            **/*.java
+            **/*.go
+            **/*.rs
+            **/*.cpp
+            **/*.c
+            **/*.h
+          separator: ','
+      
+      - name: 'Run ${{ matrix.agent }} analysis'
+        if: steps.changed-files.outputs.any_changed == 'true'
+        id: analysis
+        run: |
+          echo "🤖 Running ${{ matrix.agent }} analysis..."
+          
+          # Determine analysis focus based on agent type
+          case "${{ matrix.agent }}" in
+            "qa")
+              FOCUS="code_quality,testing,security,performance"
+              ;;
+            "architect")
+              FOCUS="architecture,patterns,scalability,maintainability"
+              ;;
+            "developer")
+              FOCUS="implementation,bugs,optimization,best_practices"
+              ;;
+          esac
+          
+          # Create analysis request
+          cat > analysis_request.json << EOF
+          {
+            "id": "${{ matrix.agent }}-review-${{ github.run_id }}",
+            "type": "${{ matrix.agent }}",
+            "action": "review_code",
+            "payload": {
+              "files": ["${{ steps.changed-files.outputs.all_changed_files }}"],
+              "repository": "${{ github.repository }}",
+              "pr_number": "${{ github.event.number }}",
+              "commit_sha": "${{ github.sha }}",
+              "focus_areas": "$FOCUS",
+              "analysis_depth": "${{ github.event.inputs.analysis_depth || 'standard' }}"
+            },
+            "context": {
+              "github_event": "${{ github.event_name }}",
+              "workflow": "${{ github.workflow }}",
+              "run_id": "${{ github.run_id }}",
+              "agent_role": "${{ matrix.agent }}"
+            },
+            "timeout": 300
+          }
+          EOF
+          
+          # Send request to agent server
+          RESPONSE=$(curl -s -X POST "${{ needs.start-agent-server.outputs.server-url }}/api/v1/agent/request" \
+            -H "Content-Type: application/json" \
+            -d @analysis_request.json)
+          
+          # Save response for aggregation
+          echo "$RESPONSE" > "${{ matrix.agent }}_analysis.json"
+          
+          # Extract key findings
+          ISSUES_COUNT=$(echo "$RESPONSE" | jq -r '.result.issues | length // 0')
+          SUGGESTIONS_COUNT=$(echo "$RESPONSE" | jq -r '.result.suggestions | length // 0')
+          
+          echo "📊 ${{ matrix.agent }} Analysis Results:"
+          echo "  Issues: $ISSUES_COUNT"
+          echo "  Suggestions: $SUGGESTIONS_COUNT"
+          
+          # Set outputs
+          echo "issues_count=$ISSUES_COUNT" >> $GITHUB_OUTPUT
+          echo "suggestions_count=$SUGGESTIONS_COUNT" >> $GITHUB_OUTPUT
+      
+      - name: 'Upload analysis artifact'
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.agent }}-analysis
+          path: ${{ matrix.agent }}_analysis.json
+          retention-days: 7
+
+  # Aggregate results and create comprehensive review
+  aggregate-review:
+    name: 'Aggregate Review Results'
+    runs-on: ubuntu-latest
+    needs: [start-agent-server, ai-code-review]
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+      
+      - name: 'Download all analysis artifacts'
+        uses: actions/download-artifact@v3
+        with:
+          path: analysis-results
+      
+      - name: 'Setup Python'
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: 'Aggregate analysis results'
+        id: aggregate
+        run: |
+          echo "📋 Aggregating analysis results..."
+          
+          python3 << 'EOF'
+          import json
+          import os
+          from pathlib import Path
+          
+          # Aggregate all analysis results
+          results = {
+              "repository": "${{ github.repository }}",
+              "pr_number": "${{ github.event.number }}",
+              "commit_sha": "${{ github.sha }}",
+              "workflow_run_id": "${{ github.run_id }}",
+              "agents": {},
+              "summary": {
+                  "total_issues": 0,
+                  "total_suggestions": 0,
+                  "critical_issues": 0,
+                  "high_priority_issues": 0,
+                  "security_issues": 0
+              }
+          }
+          
+          # Process each agent's analysis
+          for agent_dir in Path("analysis-results").iterdir():
+              if agent_dir.is_dir():
+                  agent_name = agent_dir.name.replace("-analysis", "")
+                  analysis_file = agent_dir / f"{agent_name}_analysis.json"
+                  
+                  if analysis_file.exists():
+                      with open(analysis_file) as f:
+                          data = json.load(f)
+                          results["agents"][agent_name] = data
+                          
+                          # Update summary
+                          if data.get("success") and data.get("result"):
+                              result = data["result"]
+                              issues = result.get("issues", [])
+                              suggestions = result.get("suggestions", [])
+                              
+                              results["summary"]["total_issues"] += len(issues)
+                              results["summary"]["total_suggestions"] += len(suggestions)
+                              
+                              # Count by severity
+                              for issue in issues:
+                                  severity = issue.get("severity", "").lower()
+                                  if severity == "critical":
+                                      results["summary"]["critical_issues"] += 1
+                                  elif severity == "high":
+                                      results["summary"]["high_priority_issues"] += 1
+                                  
+                                  # Count security issues
+                                  if "security" in issue.get("category", "").lower():
+                                      results["summary"]["security_issues"] += 1
+          
+          # Save aggregated results
+          with open("aggregated_results.json", "w") as f:
+              json.dump(results, f, indent=2)
+          
+          # Output summary for GitHub Actions
+          print(f"total_issues={results['summary']['total_issues']}")
+          print(f"critical_issues={results['summary']['critical_issues']}")
+          print(f"security_issues={results['summary']['security_issues']}")
+          EOF
+          
+          # Read outputs
+          TOTAL_ISSUES=$(python3 -c "import json; print(json.load(open('aggregated_results.json'))['summary']['total_issues'])")
+          CRITICAL_ISSUES=$(python3 -c "import json; print(json.load(open('aggregated_results.json'))['summary']['critical_issues'])")
+          SECURITY_ISSUES=$(python3 -c "import json; print(json.load(open('aggregated_results.json'))['summary']['security_issues'])")
+          
+          echo "total_issues=$TOTAL_ISSUES" >> $GITHUB_OUTPUT
+          echo "critical_issues=$CRITICAL_ISSUES" >> $GITHUB_OUTPUT
+          echo "security_issues=$SECURITY_ISSUES" >> $GITHUB_OUTPUT
+      
+      - name: 'Create comprehensive PR comment'
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const results = JSON.parse(fs.readFileSync('aggregated_results.json', 'utf8'));
+            
+            // Generate comprehensive review comment
+            let commentBody = `## 🤖 Gemini Enterprise Architect - Comprehensive Code Review\n\n`;
+            
+            // Add summary
+            commentBody += `### 📊 Analysis Summary\n`;
+            commentBody += `- **Total Issues**: ${results.summary.total_issues}\n`;
+            commentBody += `- **Critical Issues**: ${results.summary.critical_issues}\n`;
+            commentBody += `- **Security Issues**: ${results.summary.security_issues}\n`;
+            commentBody += `- **Suggestions**: ${results.summary.total_suggestions}\n\n`;
+            
+            // Add agent-specific reviews
+            for (const [agentName, agentData] of Object.entries(results.agents)) {
+              if (agentData.success && agentData.result) {
+                const issues = agentData.result.issues || [];
+                const suggestions = agentData.result.suggestions || [];
+                
+                commentBody += `### ${agentName.toUpperCase()} Agent Review\n`;
+                
+                if (issues.length > 0) {
+                  commentBody += `#### 🔍 Issues Found (${issues.length})\n`;
+                  issues.slice(0, 5).forEach((issue, index) => {
+                    commentBody += `${index + 1}. **${issue.severity?.toUpperCase() || 'MEDIUM'}**: ${issue.description}\n`;
+                    if (issue.file && issue.line) {
+                      commentBody += `   📁 \`${issue.file}:${issue.line}\`\n`;
+                    }
+                    if (issue.suggestion) {
+                      commentBody += `   💡 ${issue.suggestion}\n`;
+                    }
+                    commentBody += `\n`;
+                  });
+                  
+                  if (issues.length > 5) {
+                    commentBody += `   ... and ${issues.length - 5} more issues\n\n`;
+                  }
+                }
+                
+                if (suggestions.length > 0) {
+                  commentBody += `#### 💡 Suggestions (${suggestions.length})\n`;
+                  suggestions.slice(0, 3).forEach((suggestion, index) => {
+                    commentBody += `${index + 1}. ${suggestion.description}\n`;
+                    if (suggestion.file) {
+                      commentBody += `   📁 \`${suggestion.file}\`\n`;
+                    }
+                    commentBody += `\n`;
+                  });
+                }
+              }
+            }
+            
+            // Add recommendations
+            commentBody += `### 🎯 Recommendations\n`;
+            if (results.summary.critical_issues > 0) {
+              commentBody += `- 🚨 **Address ${results.summary.critical_issues} critical issues before merging**\n`;
+            }
+            if (results.summary.security_issues > 0) {
+              commentBody += `- 🔒 **Review ${results.summary.security_issues} security-related issues**\n`;
+            }
+            if (results.summary.total_issues === 0) {
+              commentBody += `- ✅ **Great job! No significant issues found**\n`;
+            }
+            
+            commentBody += `\n---\n`;
+            commentBody += `*Review powered by Gemini Enterprise Architect Multi-Agent System*\n`;
+            commentBody += `*QA • Architect • Developer agents working together*`;
+            
+            // Update or create comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const existingComment = comments.data.find(comment => 
+              comment.body.includes('🤖 Gemini Enterprise Architect - Comprehensive Code Review')
+            );
+            
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: commentBody
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+      
+      - name: 'Set check status'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const criticalIssues = ${{ steps.aggregate.outputs.critical_issues }};
+            const totalIssues = ${{ steps.aggregate.outputs.total_issues }};
+            
+            const state = criticalIssues > 0 ? 'failure' : 'success';
+            const description = criticalIssues > 0 
+              ? `Found ${criticalIssues} critical issues that need attention`
+              : totalIssues > 0 
+                ? `Found ${totalIssues} issues for review`
+                : 'No significant issues found';
+            
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: state,
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: description,
+              context: 'gemini/code-review'
+            });
+      
+      - name: 'Upload aggregated results'
+        uses: actions/upload-artifact@v3
+        with:
+          name: comprehensive-review-results
+          path: aggregated_results.json
+          retention-days: 30
+
+  # Fail if critical issues found
+  quality-gate:
+    name: 'Quality Gate'
+    runs-on: ubuntu-latest
+    needs: aggregate-review
+    if: always()
+    steps:
+      - name: 'Check quality gate'
+        run: |
+          CRITICAL_ISSUES=${{ needs.aggregate-review.outputs.critical_issues }}
+          
+          if [ "$CRITICAL_ISSUES" -gt 0 ]; then
+            echo "❌ Quality gate failed: $CRITICAL_ISSUES critical issues found"
+            echo "::error::Critical issues must be resolved before merging"
+            exit 1
+          else
+            echo "✅ Quality gate passed: No critical issues found"
+          fi

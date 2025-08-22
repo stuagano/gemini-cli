@@ -1,0 +1,351 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    tenant_id: gemini-enterprise
+
+scrape_configs:
+
+# Agent Server Logs
+- job_name: agent-server
+  static_configs:
+  - targets:
+      - localhost
+    labels:
+      job: agent-server
+      service: agent-server
+      environment: ${ENVIRONMENT}
+      __path__: /var/log/gemini/agent-server/*.log
+  pipeline_stages:
+  - json:
+      expressions:
+        timestamp: timestamp
+        level: level
+        message: message
+        service: service
+        agent_type: agent_type
+        request_id: request_id
+        user_id: user_id
+        session_id: session_id
+        duration_ms: duration_ms
+        error_code: error_code
+        stack_trace: stack_trace
+  - timestamp:
+      source: timestamp
+      format: RFC3339
+  - labels:
+      level:
+      service:
+      agent_type:
+      error_code:
+  - output:
+      source: message
+
+# Scout Indexer Logs
+- job_name: scout-indexer
+  static_configs:
+  - targets:
+      - localhost
+    labels:
+      job: scout-indexer
+      service: scout
+      environment: ${ENVIRONMENT}
+      __path__: /var/log/gemini/scout/*.log
+  pipeline_stages:
+  - json:
+      expressions:
+        timestamp: timestamp
+        level: level
+        message: message
+        file_path: file_path
+        language: language
+        function_count: function_count
+        duplicate_count: duplicate_count
+        similarity_score: similarity_score
+        processing_time_ms: processing_time_ms
+        error_type: error_type
+  - timestamp:
+      source: timestamp
+      format: RFC3339
+  - labels:
+      level:
+      language:
+      error_type:
+  - output:
+      source: message
+
+# Guardian Validation Logs
+- job_name: guardian
+  static_configs:
+  - targets:
+      - localhost
+    labels:
+      job: guardian
+      service: guardian
+      environment: ${ENVIRONMENT}
+      __path__: /var/log/gemini/guardian/*.log
+  pipeline_stages:
+  - json:
+      expressions:
+        timestamp: timestamp
+        level: level
+        message: message
+        validation_type: validation_type
+        file_path: file_path
+        rule_name: rule_name
+        severity: severity
+        violation_count: violation_count
+        validation_time_ms: validation_time_ms
+  - timestamp:
+      source: timestamp
+      format: RFC3339
+  - labels:
+      level:
+      validation_type:
+      rule_name:
+      severity:
+  - output:
+      source: message
+
+# Killer Demo Logs
+- job_name: killer-demo
+  static_configs:
+  - targets:
+      - localhost
+    labels:
+      job: killer-demo
+      service: killer-demo
+      environment: ${ENVIRONMENT}
+      __path__: /var/log/gemini/killer-demo/*.log
+  pipeline_stages:
+  - json:
+      expressions:
+        timestamp: timestamp
+        level: level
+        message: message
+        issue_type: issue_type
+        severity: severity
+        file_path: file_path
+        function_name: function_name
+        potential_savings_usd: potential_savings_usd
+        performance_impact_percent: performance_impact_percent
+        detection_confidence: detection_confidence
+  - timestamp:
+      source: timestamp
+      format: RFC3339
+  - labels:
+      level:
+      issue_type:
+      severity:
+  - output:
+      source: message
+
+# Knowledge Base Logs
+- job_name: knowledge-base
+  static_configs:
+  - targets:
+      - localhost
+    labels:
+      job: knowledge-base
+      service: knowledge-base
+      environment: ${ENVIRONMENT}
+      __path__: /var/log/gemini/knowledge/*.log
+  pipeline_stages:
+  - json:
+      expressions:
+        timestamp: timestamp
+        level: level
+        message: message
+        query_type: query_type
+        query_text: query
+        response_time_ms: response_time_ms
+        chunk_count: chunk_count
+        confidence_score: confidence_score
+        document_count: document_count
+  - timestamp:
+      source: timestamp
+      format: RFC3339
+  - labels:
+      level:
+      query_type:
+  - output:
+      source: message
+
+# Infrastructure Logs
+- job_name: nginx
+  static_configs:
+  - targets:
+      - localhost
+    labels:
+      job: nginx
+      service: nginx
+      environment: ${ENVIRONMENT}
+      __path__: /var/log/nginx/access.log
+  pipeline_stages:
+  - regex:
+      expression: '^(?P<remote_addr>\S+) - (?P<remote_user>\S+) \[(?P<time_local>[^\]]+)\] "(?P<method>\S+) (?P<path>\S+) (?P<protocol>\S+)" (?P<status>\d+) (?P<body_bytes_sent>\d+) "(?P<http_referer>[^"]*)" "(?P<http_user_agent>[^"]*)" rt=(?P<request_time>\S+) uct="(?P<upstream_connect_time>\S+)" uht="(?P<upstream_header_time>\S+)" urt="(?P<upstream_response_time>\S+)"'
+  - timestamp:
+      source: time_local
+      format: "02/Jan/2006:15:04:05 -0700"
+  - labels:
+      method:
+      status:
+  - output:
+      source: message
+
+# PostgreSQL Logs
+- job_name: postgresql
+  static_configs:
+  - targets:
+      - localhost
+    labels:
+      job: postgresql
+      service: postgresql
+      environment: ${ENVIRONMENT}
+      __path__: /var/log/postgresql/*.log
+  pipeline_stages:
+  - regex:
+      expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} \w+) \[(?P<pid>\d+)\] (?P<level>\w+):  (?P<message>.*)'
+  - timestamp:
+      source: timestamp
+      format: "2006-01-02 15:04:05.000 MST"
+  - labels:
+      level:
+      pid:
+  - output:
+      source: message
+
+# Redis Logs
+- job_name: redis
+  static_configs:
+  - targets:
+      - localhost
+    labels:
+      job: redis
+      service: redis
+      environment: ${ENVIRONMENT}
+      __path__: /var/log/redis/*.log
+  pipeline_stages:
+  - regex:
+      expression: '^(?P<pid>\d+):(?P<role>\w+) (?P<timestamp>\d{2} \w{3} \d{4} \d{2}:\d{2}:\d{2}\.\d{3}) (?P<level>[*#-]) (?P<message>.*)'
+  - timestamp:
+      source: timestamp
+      format: "02 Jan 2006 15:04:05.000"
+  - labels:
+      level:
+      role:
+      pid:
+  - output:
+      source: message
+
+# Kubernetes Pod Logs
+- job_name: kubernetes-pods
+  kubernetes_sd_configs:
+  - role: pod
+  relabel_configs:
+  - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+    action: keep
+    regex: true
+  - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+    action: replace
+    target_label: __metrics_path__
+    regex: (.+)
+  - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+    action: replace
+    regex: ([^:]+)(?::\d+)?;(\d+)
+    replacement: $1:$2
+    target_label: __address__
+  - action: labelmap
+    regex: __meta_kubernetes_pod_label_(.+)
+  - source_labels: [__meta_kubernetes_namespace]
+    action: replace
+    target_label: kubernetes_namespace
+  - source_labels: [__meta_kubernetes_pod_name]
+    action: replace
+    target_label: kubernetes_pod_name
+  - source_labels: [__meta_kubernetes_pod_container_name]
+    action: replace
+    target_label: kubernetes_container_name
+  pipeline_stages:
+  - cri: {}
+  - json:
+      expressions:
+        timestamp: timestamp
+        level: level
+        message: message
+        service: service
+        component: component
+  - timestamp:
+      source: timestamp
+      format: RFC3339
+  - labels:
+      level:
+      service:
+      component:
+  - output:
+      source: message
+
+# System Logs
+- job_name: syslog
+  static_configs:
+  - targets:
+      - localhost
+    labels:
+      job: syslog
+      service: system
+      environment: ${ENVIRONMENT}
+      __path__: /var/log/syslog
+  pipeline_stages:
+  - regex:
+      expression: '^(?P<timestamp>\w{3} \d{1,2} \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<program>\S+)(\[(?P<pid>\d+)\])?: (?P<message>.*)'
+  - timestamp:
+      source: timestamp
+      format: "Jan 2 15:04:05"
+  - labels:
+      hostname:
+      program:
+      pid:
+  - output:
+      source: message
+
+# Application Error Logs (structured JSON)
+- job_name: application-errors
+  static_configs:
+  - targets:
+      - localhost
+    labels:
+      job: application-errors
+      service: gemini
+      environment: ${ENVIRONMENT}
+      __path__: /var/log/gemini/errors/*.log
+  pipeline_stages:
+  - json:
+      expressions:
+        timestamp: timestamp
+        level: level
+        message: message
+        error_type: error_type
+        error_code: error_code
+        stack_trace: stack_trace
+        user_id: user_id
+        session_id: session_id
+        request_id: request_id
+        component: component
+        function_name: function_name
+        file_path: file_path
+        line_number: line_number
+  - timestamp:
+      source: timestamp
+      format: RFC3339
+  - labels:
+      level:
+      error_type:
+      error_code:
+      component:
+  - output:
+      source: message

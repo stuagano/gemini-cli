@@ -1,0 +1,322 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "DORA Metrics - DevOps Performance",
+    "tags": ["dora", "devops", "deployment", "performance"],
+    "style": "dark",
+    "timezone": "browser",
+    "refresh": "5m",
+    "schemaVersion": 30,
+    "version": 1,
+    "time": {
+      "from": "now-30d",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Deployment Frequency",
+        "description": "How often does your organization successfully release to production?",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(increase(gemini_deployments_total[7d])) / 7",
+            "legendFormat": "Deployments per day",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 0.14},
+                {"color": "green", "value": 1}
+              ]
+            },
+            "unit": "short",
+            "decimals": 2
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Lead Time for Changes",
+        "description": "How long does it take to go from code committed to code successfully running in production?",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.5, sum(rate(gemini_lead_time_seconds_bucket[7d])) by (le)) / 3600",
+            "legendFormat": "Median Lead Time (hours)",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": 0},
+                {"color": "yellow", "value": 24},
+                {"color": "orange", "value": 168},
+                {"color": "red", "value": 720}
+              ]
+            },
+            "unit": "h",
+            "decimals": 1
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Mean Time to Recovery (MTTR)",
+        "description": "How long does it generally take to recover from a failure in production?",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "avg(gemini_incident_resolution_time_seconds) / 3600",
+            "legendFormat": "Average MTTR (hours)",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": 0},
+                {"color": "yellow", "value": 1},
+                {"color": "orange", "value": 24},
+                {"color": "red", "value": 168}
+              ]
+            },
+            "unit": "h",
+            "decimals": 1
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "Change Failure Rate",
+        "description": "What percentage of deployments cause a failure in production?",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(increase(gemini_deployment_failures_total[7d])) / sum(increase(gemini_deployments_total[7d])) * 100",
+            "legendFormat": "Failure Rate %",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": 0},
+                {"color": "yellow", "value": 5},
+                {"color": "orange", "value": 15},
+                {"color": "red", "value": 30}
+              ]
+            },
+            "unit": "percent",
+            "decimals": 1
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0}
+      },
+      {
+        "id": 5,
+        "title": "Deployment Frequency Trend",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "sum(increase(gemini_deployments_total[1d]))",
+            "legendFormat": "Daily Deployments",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "bars",
+              "lineInterpolation": "linear",
+              "pointSize": 5,
+              "fillOpacity": 80
+            },
+            "unit": "short"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 6,
+        "title": "Lead Time Distribution",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.5, sum(rate(gemini_lead_time_seconds_bucket[1d])) by (le)) / 3600",
+            "legendFormat": "50th percentile",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(gemini_lead_time_seconds_bucket[1d])) by (le)) / 3600",
+            "legendFormat": "95th percentile",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.99, sum(rate(gemini_lead_time_seconds_bucket[1d])) by (le)) / 3600",
+            "legendFormat": "99th percentile",
+            "refId": "C"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear"
+            },
+            "unit": "h"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 7,
+        "title": "MTTR by Service",
+        "type": "barchart",
+        "targets": [
+          {
+            "expr": "avg(gemini_incident_resolution_time_seconds) by (service) / 3600",
+            "legendFormat": "{{service}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "h",
+            "custom": {
+              "orientation": "horizontal"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      },
+      {
+        "id": 8,
+        "title": "Change Failure Rate by Environment",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "sum(rate(gemini_deployment_failures_total[1d])) by (environment) / sum(rate(gemini_deployments_total[1d])) by (environment) * 100",
+            "legendFormat": "{{environment}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear"
+            },
+            "unit": "percent"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      },
+      {
+        "id": 9,
+        "title": "DORA Performance Classification",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "sum(increase(gemini_deployments_total[7d])) / 7",
+            "legendFormat": "Deployment Frequency",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.5, sum(rate(gemini_lead_time_seconds_bucket[7d])) by (le)) / 3600",
+            "legendFormat": "Lead Time (hours)",
+            "refId": "B"
+          },
+          {
+            "expr": "avg(gemini_incident_resolution_time_seconds) / 3600",
+            "legendFormat": "MTTR (hours)",
+            "refId": "C"
+          },
+          {
+            "expr": "sum(increase(gemini_deployment_failures_total[7d])) / sum(increase(gemini_deployments_total[7d])) * 100",
+            "legendFormat": "Change Failure Rate (%)",
+            "refId": "D"
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {},
+              "indexByName": {},
+              "renameByName": {}
+            }
+          }
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24}
+      },
+      {
+        "id": 10,
+        "title": "Release Pipeline Health",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(gemini_pipeline_success_total[5m])",
+            "legendFormat": "Successful Pipelines/min",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(gemini_pipeline_failure_total[5m])",
+            "legendFormat": "Failed Pipelines/min",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32}
+      },
+      {
+        "id": 11,
+        "title": "Code Quality Impact on DORA",
+        "type": "scatterplot",
+        "targets": [
+          {
+            "expr": "gemini_code_coverage_percentage",
+            "legendFormat": "Code Coverage %",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(increase(gemini_deployment_failures_total[7d])) / sum(increase(gemini_deployments_total[7d])) * 100",
+            "legendFormat": "Change Failure Rate %",
+            "refId": "B"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32}
+      }
+    ]
+  }
+}

@@ -6,7 +6,7 @@
 
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { listMcpServers } from './list.js';
-import { loadSettings } from '../../config/settings.js';
+import { loadSettings, LoadedSettings } from '../../config/settings.js';
 import { loadExtensions } from '../../config/extension.js';
 import { createTransport } from '@google/gemini-cli-core';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -58,7 +58,9 @@ describe('mcp list command', () => {
   });
 
   it('should display message when no servers configured', async () => {
-    mockedLoadSettings.mockReturnValue({ merged: { mcpServers: {} } });
+    mockedLoadSettings.mockReturnValue({
+      merged: { mcpServers: {} },
+    } as Partial<LoadedSettings>);
 
     await listMcpServers();
 
@@ -74,7 +76,7 @@ describe('mcp list command', () => {
           'http-server': { httpUrl: 'https://example.com/http' },
         },
       },
-    });
+    } as Partial<LoadedSettings>);
 
     mockClient.connect.mockResolvedValue(undefined);
     mockClient.ping.mockResolvedValue(undefined);
@@ -106,7 +108,7 @@ describe('mcp list command', () => {
           'test-server': { command: '/test/server' },
         },
       },
-    });
+    } as Partial<LoadedSettings>);
 
     mockClient.connect.mockRejectedValue(new Error('Connection failed'));
 
@@ -124,7 +126,7 @@ describe('mcp list command', () => {
       merged: {
         mcpServers: { 'config-server': { command: '/config/server' } },
       },
-    });
+    } as Partial<LoadedSettings>);
 
     mockedLoadExtensions.mockReturnValue([
       {

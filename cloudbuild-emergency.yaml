@@ -1,0 +1,164 @@
+# Gemini Enterprise Architect - Emergency CI/CD Pipeline
+# Simplified pipeline for urgent deployments with minimal testing
+
+steps:
+  # Step 1: Quick dependency installation
+  - name: 'node:20-slim'
+    id: 'npm-install-quick'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "⚠️ EMERGENCY DEPLOYMENT - Installing minimal dependencies..."
+        npm ci --production --workspaces
+    waitFor: ['-']
+
+  # Step 2: Basic Python setup
+  - name: 'python:3.11-slim'
+    id: 'python-setup-quick'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "⚠️ EMERGENCY DEPLOYMENT - Setting up Python..."
+        pip install --upgrade pip
+        pip install -r requirements.txt --no-deps
+    waitFor: ['-']
+
+  # Step 3: Syntax validation only (skip comprehensive tests)
+  - name: 'node:20-slim'
+    id: 'syntax-check-typescript'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "⚠️ EMERGENCY DEPLOYMENT - Basic syntax checking..."
+        npm run build:packages
+        npx tsc --noEmit --skipLibCheck
+    waitFor: ['npm-install-quick']
+
+  - name: 'python:3.11-slim'
+    id: 'syntax-check-python'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "⚠️ EMERGENCY DEPLOYMENT - Python syntax validation..."
+        python -m py_compile src/api/agent_server.py
+        python -c "import ast; [ast.parse(open(f).read()) for f in ['src/api/agent_server.py']]"
+        echo "✅ Basic Python syntax validation passed"
+    waitFor: ['python-setup-quick']
+
+  # Step 4: Critical functionality test only
+  - name: 'python:3.11-slim'
+    id: 'critical-test'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "⚠️ EMERGENCY DEPLOYMENT - Running critical functionality test..."
+        cd /workspace
+        python -c "
+        import sys
+        sys.path.append('src')
+        
+        # Test that the server can start
+        try:
+            from api.agent_server import app
+            print('✅ FastAPI app can be imported')
+        except Exception as e:
+            print(f'❌ CRITICAL: FastAPI app import failed: {e}')
+            sys.exit(1)
+        
+        # Test basic agent import
+        try:
+            from agents.enhanced.analyst import EnhancedAnalyst
+            print('✅ Enhanced agents can be imported')
+        except Exception as e:
+            print(f'❌ WARNING: Agent import failed: {e}')
+        
+        print('✅ Critical functionality test passed')
+        "
+    waitFor: ['syntax-check-python']
+
+  # Step 5: Build Docker images (no security scanning)
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-agent-server-emergency'
+    args:
+      - 'build'
+      - '-f'
+      - 'docker/agent-server.Dockerfile'
+      - '-t'
+      - '${_ARTIFACT_REGISTRY_URL}/agent-server:${BUILD_ID}-emergency'
+      - '-t'
+      - '${_ARTIFACT_REGISTRY_URL}/agent-server:${BRANCH_NAME}-emergency'
+      - '.'
+    waitFor: ['critical-test', 'syntax-check-typescript']
+
+  # Step 6: Push images immediately
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-agent-server-emergency'
+    args:
+      - 'push'
+      - '--all-tags'
+      - '${_ARTIFACT_REGISTRY_URL}/agent-server'
+    waitFor: ['build-agent-server-emergency']
+
+  # Step 7: Generate emergency build manifest
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'generate-emergency-manifest'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "⚠️ EMERGENCY DEPLOYMENT - Generating build manifest..."
+        
+        cat > build-manifest.json << EOF
+        {
+          "buildId": "${BUILD_ID}",
+          "commitSha": "${COMMIT_SHA}",
+          "branchName": "${BRANCH_NAME}",
+          "buildTime": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          "emergencyDeployment": true,
+          "testingSkipped": true,
+          "securityScanningSkipped": true,
+          "images": {
+            "agentServer": "${_ARTIFACT_REGISTRY_URL}/agent-server:${BUILD_ID}-emergency"
+          },
+          "warnings": [
+            "This is an emergency deployment",
+            "Comprehensive testing was skipped",
+            "Security scanning was skipped",
+            "Deploy with caution and monitor closely"
+          ]
+        }
+        EOF
+        
+        # Upload artifacts
+        gsutil cp build-manifest.json gs://${_BUILD_ARTIFACTS_BUCKET}/builds/${BUILD_ID}/
+        
+        echo "⚠️ EMERGENCY MANIFEST UPLOADED"
+        echo "🚨 WARNING: This build skipped comprehensive testing and security scanning"
+        echo "📊 Build manifest: gs://${_BUILD_ARTIFACTS_BUCKET}/builds/${BUILD_ID}/"
+    waitFor: ['push-agent-server-emergency']
+
+# Build options - faster configuration
+options:
+  machineType: 'E2_HIGHCPU_8'
+  diskSizeGb: 50
+  logging: CLOUD_LOGGING_ONLY
+
+# Shorter timeout for emergency
+timeout: '1200s'  # 20 minutes
+
+# Substitutions
+substitutions:
+  _ARTIFACT_REGISTRY_URL: '${_REGION}-docker.pkg.dev/${PROJECT_ID}/gemini-containers'
+  _BUILD_ARTIFACTS_BUCKET: 'gemini-build-artifacts-${PROJECT_ID}'
+  _REGION: 'us-central1'
+
+# Tags
+tags:
+  - 'gemini-cli'
+  - 'emergency-deployment'
+  - 'skip-tests'

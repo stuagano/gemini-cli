@@ -1,0 +1,803 @@
+name: 'Gemini Full Multi-Agent Analysis'
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, develop]
+  
+  push:
+    branches: [main, develop]
+  
+  workflow_dispatch:
+    inputs:
+      analysis_scope:
+        description: 'Analysis scope'
+        required: false
+        default: 'comprehensive'
+        type: choice
+        options:
+          - 'quick'
+          - 'standard'
+          - 'comprehensive'
+          - 'deep'
+      include_performance:
+        description: 'Include performance analysis'
+        required: false
+        default: true
+        type: boolean
+      include_security:
+        description: 'Include security analysis'
+        required: false
+        default: true
+        type: boolean
+      parallel_agents:
+        description: 'Run agents in parallel'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  statuses: write
+  security-events: write
+
+env:
+  PYTHON_VERSION: '3.11'
+  AGENT_SERVER_PORT: 8000
+  ANALYSIS_TIMEOUT: 600
+
+jobs:
+  # Infrastructure setup with full agent orchestration
+  setup-gemini-infrastructure:
+    name: 'Setup Gemini Infrastructure'
+    runs-on: ubuntu-latest
+    outputs:
+      server-url: ${{ steps.server.outputs.url }}
+      agent-health: ${{ steps.health.outputs.status }}
+      nexus-ready: ${{ steps.nexus.outputs.ready }}
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: 'Setup Python environment'
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: 'Cache dependencies and models'
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/huggingface
+            ~/.scout-index
+            .gemini-cache/
+          key: gemini-full-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}-${{ github.sha }}
+          restore-keys: |
+            gemini-full-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}-
+            gemini-full-${{ runner.os }}-
+      
+      - name: 'Install comprehensive dependencies'
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-test.txt
+          
+          # Additional analysis dependencies
+          pip install bandit safety semgrep
+          pip install pytest-cov coverage radon
+          pip install tree-sitter tree-sitter-python tree-sitter-javascript
+      
+      - name: 'Start full agent server infrastructure'
+        id: server
+        run: |
+          cd src
+          export BMAD_PROJECT_ROOT="${{ github.workspace }}"
+          export GEMINI_ANALYSIS_MODE="comprehensive"
+          export AGENT_PARALLEL_MODE="${{ github.event.inputs.parallel_agents || 'true' }}"
+          
+          # Start server with all agents
+          python start_server.py &
+          SERVER_PID=$!
+          echo "server_pid=$SERVER_PID" >> $GITHUB_OUTPUT
+          echo "url=http://localhost:${{ env.AGENT_SERVER_PORT }}" >> $GITHUB_OUTPUT
+          
+          # Wait for server readiness
+          timeout=90
+          while ! curl -s "http://localhost:${{ env.AGENT_SERVER_PORT }}/api/v1/health" > /dev/null; do
+            sleep 3
+            timeout=$((timeout - 3))
+            if [ $timeout -le 0 ]; then
+              echo "❌ Agent server failed to start"
+              exit 1
+            fi
+          done
+          echo "✅ Agent server infrastructure ready"
+      
+      - name: 'Verify agent health'
+        id: health
+        run: |
+          echo "🔍 Verifying all agents are healthy..."
+          
+          HEALTH_RESPONSE=$(curl -s "http://localhost:${{ env.AGENT_SERVER_PORT }}/api/v1/health")
+          echo "Health response: $HEALTH_RESPONSE"
+          
+          # Check individual agent status
+          AGENTS=$(curl -s "http://localhost:${{ env.AGENT_SERVER_PORT }}/api/v1/agents")
+          echo "Available agents: $AGENTS"
+          
+          AGENT_COUNT=$(echo "$AGENTS" | jq -r '.agents | length')
+          
+          if [ "$AGENT_COUNT" -ge 7 ]; then
+            echo "status=healthy" >> $GITHUB_OUTPUT
+            echo "✅ All $AGENT_COUNT agents are healthy"
+          else
+            echo "status=degraded" >> $GITHUB_OUTPUT
+            echo "⚠️ Only $AGENT_COUNT agents available"
+          fi
+      
+      - name: 'Initialize Nexus coordination'
+        id: nexus
+        run: |
+          echo "🧠 Initializing Nexus agent coordination..."
+          
+          # Test Nexus coordination with a simple request
+          cat > nexus_test.json << EOF
+          {
+            "id": "nexus-test-${{ github.run_id }}",
+            "type": "architect",
+            "action": "coordinate_analysis",
+            "payload": {
+              "coordination_test": true,
+              "repository": "${{ github.repository }}"
+            },
+            "context": {
+              "nexus_mode": "test",
+              "agents_required": ["analyst", "architect", "developer", "qa"]
+            },
+            "timeout": 30
+          }
+          EOF
+          
+          NEXUS_RESPONSE=$(curl -s -X POST "http://localhost:${{ env.AGENT_SERVER_PORT }}/api/v1/agent/request" \
+            -H "Content-Type: application/json" \
+            -d @nexus_test.json)
+          
+          if echo "$NEXUS_RESPONSE" | jq -e '.success' > /dev/null; then
+            echo "ready=true" >> $GITHUB_OUTPUT
+            echo "✅ Nexus coordination ready"
+          else
+            echo "ready=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Nexus coordination issues detected"
+          fi
+      
+      - name: 'Keep infrastructure running'
+        run: |
+          # Keep all infrastructure running for dependent jobs
+          tail -f /dev/null &
+
+  # Parallel agent analysis matrix
+  multi-agent-analysis:
+    name: 'Multi-Agent Analysis'
+    runs-on: ubuntu-latest
+    needs: setup-gemini-infrastructure
+    strategy:
+      matrix:
+        agent:
+          - { name: 'analyst', focus: 'metrics,complexity,maintainability', timeout: 180 }
+          - { name: 'architect', focus: 'patterns,structure,scalability', timeout: 240 }
+          - { name: 'developer', focus: 'implementation,optimization,bugs', timeout: 180 }
+          - { name: 'qa', focus: 'testing,quality,security', timeout: 200 }
+          - { name: 'scout', focus: 'duplicates,patterns,indexing', timeout: 120 }
+          - { name: 'po', focus: 'requirements,business_value,features', timeout: 150 }
+      fail-fast: false
+      max-parallel: 6
+    outputs:
+      analysis-complete: ${{ steps.analysis.outputs.complete }}
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: 'Get analysis files'
+        id: files
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Get PR files
+            FILES=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "${{ github.api_url }}/repos/${{ github.repository }}/pulls/${{ github.event.number }}/files" | \
+              jq -r '[.[] | select(.filename | test("\\.(py|js|ts|jsx|tsx|java|go|rs|cpp|c|h|md|yml|yaml|json)$")) | .filename] | join(",")')
+          else
+            # Get changed files from push
+            FILES=$(git diff --name-only HEAD~1 HEAD | grep -E "\\.(py|js|ts|jsx|tsx|java|go|rs|cpp|c|h|md|yml|yaml|json)$" | tr '\n' ',' | sed 's/,$//')
+          fi
+          
+          # Limit files for analysis scope
+          SCOPE="${{ github.event.inputs.analysis_scope || 'comprehensive' }}"
+          case "$SCOPE" in
+            "quick")
+              FILES=$(echo "$FILES" | cut -d',' -f1-10)
+              ;;
+            "standard")
+              FILES=$(echo "$FILES" | cut -d',' -f1-25)
+              ;;
+            "comprehensive")
+              FILES=$(echo "$FILES" | cut -d',' -f1-50)
+              ;;
+            "deep")
+              # No limit for deep analysis
+              ;;
+          esac
+          
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+          echo "🔍 ${{ matrix.agent.name }} will analyze: $FILES"
+      
+      - name: 'Run ${{ matrix.agent.name }} agent analysis'
+        id: analysis
+        if: steps.files.outputs.files != ''
+        run: |
+          echo "🤖 Running ${{ matrix.agent.name }} agent analysis..."
+          
+          # Configure analysis based on agent and scope
+          ANALYSIS_SCOPE="${{ github.event.inputs.analysis_scope || 'comprehensive' }}"
+          INCLUDE_PERFORMANCE="${{ github.event.inputs.include_performance || 'true' }}"
+          INCLUDE_SECURITY="${{ github.event.inputs.include_security || 'true' }}"
+          
+          cat > ${{ matrix.agent.name }}_request.json << EOF
+          {
+            "id": "${{ matrix.agent.name }}-analysis-${{ github.run_id }}",
+            "type": "${{ matrix.agent.name }}",
+            "action": "comprehensive_analysis",
+            "payload": {
+              "files": ["${{ steps.files.outputs.files }}"],
+              "repository": "${{ github.repository }}",
+              "pr_number": "${{ github.event.number }}",
+              "commit_sha": "${{ github.sha }}",
+              "analysis_scope": "$ANALYSIS_SCOPE",
+              "focus_areas": "${{ matrix.agent.focus }}",
+              "include_performance": $INCLUDE_PERFORMANCE,
+              "include_security": $INCLUDE_SECURITY,
+              "depth": "$ANALYSIS_SCOPE"
+            },
+            "context": {
+              "github_event": "${{ github.event_name }}",
+              "workflow": "${{ github.workflow }}",
+              "run_id": "${{ github.run_id }}",
+              "agent_role": "${{ matrix.agent.name }}",
+              "parallel_mode": true,
+              "nexus_coordination": true
+            },
+            "timeout": ${{ matrix.agent.timeout }}
+          }
+          EOF
+          
+          # Send analysis request
+          RESPONSE=$(curl -s -X POST "${{ needs.setup-gemini-infrastructure.outputs.server-url }}/api/v1/agent/request" \
+            -H "Content-Type: application/json" \
+            -d @${{ matrix.agent.name }}_request.json)
+          
+          echo "$RESPONSE" > ${{ matrix.agent.name }}_analysis.json
+          
+          # Extract key metrics
+          SUCCESS=$(echo "$RESPONSE" | jq -r '.success // false')
+          
+          if [ "$SUCCESS" = "true" ]; then
+            ISSUES_COUNT=$(echo "$RESPONSE" | jq -r '.result.issues | length // 0')
+            SUGGESTIONS_COUNT=$(echo "$RESPONSE" | jq -r '.result.suggestions | length // 0')
+            INSIGHTS_COUNT=$(echo "$RESPONSE" | jq -r '.result.insights | length // 0')
+            
+            echo "complete=true" >> $GITHUB_OUTPUT
+            echo "issues=$ISSUES_COUNT" >> $GITHUB_OUTPUT
+            echo "suggestions=$SUGGESTIONS_COUNT" >> $GITHUB_OUTPUT
+            echo "insights=$INSIGHTS_COUNT" >> $GITHUB_OUTPUT
+            
+            echo "📊 ${{ matrix.agent.name }} Analysis Results:"
+            echo "  Issues: $ISSUES_COUNT"
+            echo "  Suggestions: $SUGGESTIONS_COUNT"
+            echo "  Insights: $INSIGHTS_COUNT"
+          else
+            echo "complete=false" >> $GITHUB_OUTPUT
+            echo "❌ ${{ matrix.agent.name }} analysis failed"
+            ERROR_MSG=$(echo "$RESPONSE" | jq -r '.error.message // "Unknown error"')
+            echo "Error: $ERROR_MSG"
+          fi
+      
+      - name: 'Upload ${{ matrix.agent.name }} analysis'
+        if: steps.analysis.outputs.complete == 'true'
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.agent.name }}-analysis
+          path: ${{ matrix.agent.name }}_analysis.json
+          retention-days: 7
+
+  # Killer Demo: Advanced scaling analysis
+  killer-demo-analysis:
+    name: 'Killer Demo: Advanced Analysis'
+    runs-on: ubuntu-latest
+    needs: setup-gemini-infrastructure
+    outputs:
+      scaling-risk: ${{ steps.scaling.outputs.risk_score }}
+      performance-grade: ${{ steps.performance.outputs.grade }}
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+      
+      - name: 'Advanced scaling detection'
+        id: scaling
+        run: |
+          echo "🚀 Running Killer Demo: Advanced Scaling Detection..."
+          
+          cat > killer_demo_request.json << EOF
+          {
+            "id": "killer-demo-${{ github.run_id }}",
+            "type": "developer",
+            "action": "killer_demo_analysis",
+            "payload": {
+              "repository": "${{ github.repository }}",
+              "pr_number": "${{ github.event.number }}",
+              "analysis_type": "killer_demo",
+              "scaling_focus": true,
+              "deep_analysis": true
+            },
+            "context": {
+              "killer_demo": true,
+              "showcase_mode": true
+            },
+            "timeout": 300
+          }
+          EOF
+          
+          RESPONSE=$(curl -s -X POST "${{ needs.setup-gemini-infrastructure.outputs.server-url }}/api/v1/agent/request" \
+            -H "Content-Type: application/json" \
+            -d @killer_demo_request.json)
+          
+          echo "$RESPONSE" > killer_demo_results.json
+          
+          RISK_SCORE=$(echo "$RESPONSE" | jq -r '.result.risk_score // 0')
+          echo "risk_score=$RISK_SCORE" >> $GITHUB_OUTPUT
+          
+          echo "📊 Killer Demo Analysis: Risk Score $RISK_SCORE/100"
+      
+      - name: 'Performance profiling'
+        id: performance
+        run: |
+          echo "⚡ Running performance profiling..."
+          
+          # Calculate performance grade based on various factors
+          RISK_SCORE=${{ steps.scaling.outputs.risk_score }}
+          
+          if [ "$RISK_SCORE" -lt 20 ]; then
+            GRADE="A+"
+          elif [ "$RISK_SCORE" -lt 40 ]; then
+            GRADE="A"
+          elif [ "$RISK_SCORE" -lt 60 ]; then
+            GRADE="B"
+          elif [ "$RISK_SCORE" -lt 80 ]; then
+            GRADE="C"
+          else
+            GRADE="F"
+          fi
+          
+          echo "grade=$GRADE" >> $GITHUB_OUTPUT
+          echo "📈 Performance Grade: $GRADE"
+      
+      - name: 'Upload killer demo results'
+        uses: actions/upload-artifact@v3
+        with:
+          name: killer-demo-analysis
+          path: killer_demo_results.json
+
+  # Security and compliance analysis
+  security-analysis:
+    name: 'Security & Compliance Analysis'
+    runs-on: ubuntu-latest
+    needs: setup-gemini-infrastructure
+    if: github.event.inputs.include_security != 'false'
+    outputs:
+      security-issues: ${{ steps.security.outputs.issues }}
+      compliance-score: ${{ steps.compliance.outputs.score }}
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+      
+      - name: 'Run security analysis'
+        id: security
+        run: |
+          echo "🔒 Running comprehensive security analysis..."
+          
+          # Run multiple security tools
+          bandit -r . -f json -o bandit_results.json || true
+          safety check --json > safety_results.json || true
+          
+          # Aggregate security findings
+          BANDIT_ISSUES=$(cat bandit_results.json | jq '.results | length' 2>/dev/null || echo "0")
+          SAFETY_ISSUES=$(cat safety_results.json | jq '. | length' 2>/dev/null || echo "0")
+          
+          TOTAL_SECURITY_ISSUES=$((BANDIT_ISSUES + SAFETY_ISSUES))
+          
+          echo "issues=$TOTAL_SECURITY_ISSUES" >> $GITHUB_OUTPUT
+          echo "🔒 Security Analysis: $TOTAL_SECURITY_ISSUES issues found"
+      
+      - name: 'Compliance assessment'
+        id: compliance
+        run: |
+          echo "📋 Running compliance assessment..."
+          
+          # Calculate compliance score based on various factors
+          SECURITY_ISSUES=${{ steps.security.outputs.issues }}
+          
+          # Base score
+          COMPLIANCE_SCORE=100
+          
+          # Deduct points for security issues
+          COMPLIANCE_SCORE=$((COMPLIANCE_SCORE - (SECURITY_ISSUES * 5)))
+          
+          # Ensure score doesn't go below 0
+          COMPLIANCE_SCORE=$(echo "$COMPLIANCE_SCORE" | awk '{print ($1 < 0) ? 0 : $1}')
+          
+          echo "score=$COMPLIANCE_SCORE" >> $GITHUB_OUTPUT
+          echo "📋 Compliance Score: $COMPLIANCE_SCORE/100"
+      
+      - name: 'Upload security results'
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-analysis
+          path: |
+            bandit_results.json
+            safety_results.json
+
+  # Nexus coordination and final analysis
+  nexus-coordination:
+    name: 'Nexus: Final Coordination'
+    runs-on: ubuntu-latest
+    needs: [multi-agent-analysis, killer-demo-analysis, security-analysis]
+    if: always()
+    steps:
+      - name: 'Download all analysis results'
+        uses: actions/download-artifact@v3
+        with:
+          path: analysis-results
+      
+      - name: 'Setup Python for aggregation'
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: 'Aggregate and coordinate results'
+        id: coordination
+        run: |
+          echo "🧠 Nexus: Coordinating all agent analyses..."
+          
+          python3 << 'EOF'
+          import json
+          import os
+          from pathlib import Path
+          from datetime import datetime
+          
+          # Initialize aggregated results
+          coordination_results = {
+              "repository": "${{ github.repository }}",
+              "pr_number": "${{ github.event.number }}",
+              "commit_sha": "${{ github.sha }}",
+              "workflow_run_id": "${{ github.run_id }}",
+              "analysis_timestamp": datetime.utcnow().isoformat(),
+              "agents": {},
+              "coordination": {
+                  "total_issues": 0,
+                  "critical_issues": 0,
+                  "security_issues": 0,
+                  "performance_issues": 0,
+                  "suggestions": 0,
+                  "overall_score": 0,
+                  "production_readiness": False
+              },
+              "killer_demo": {},
+              "recommendations": []
+          }
+          
+          # Process each agent's analysis
+          results_dir = Path("analysis-results")
+          for agent_dir in results_dir.iterdir():
+              if agent_dir.is_dir():
+                  agent_name = agent_dir.name.replace("-analysis", "")
+                  analysis_file = agent_dir / f"{agent_name}_analysis.json"
+                  
+                  if analysis_file.exists():
+                      try:
+                          with open(analysis_file) as f:
+                              data = json.load(f)
+                              coordination_results["agents"][agent_name] = data
+                              
+                              # Aggregate metrics
+                              if data.get("success") and data.get("result"):
+                                  result = data["result"]
+                                  issues = result.get("issues", [])
+                                  suggestions = result.get("suggestions", [])
+                                  
+                                  coordination_results["coordination"]["total_issues"] += len(issues)
+                                  coordination_results["coordination"]["suggestions"] += len(suggestions)
+                                  
+                                  # Count by severity
+                                  for issue in issues:
+                                      severity = issue.get("severity", "").lower()
+                                      if severity in ["critical", "high"]:
+                                          coordination_results["coordination"]["critical_issues"] += 1
+                                      
+                                      category = issue.get("category", "").lower()
+                                      if "security" in category:
+                                          coordination_results["coordination"]["security_issues"] += 1
+                                      if "performance" in category or "scaling" in category:
+                                          coordination_results["coordination"]["performance_issues"] += 1
+                      except Exception as e:
+                          print(f"Error processing {agent_name}: {e}")
+          
+          # Add killer demo results
+          killer_demo_file = results_dir / "killer-demo-analysis" / "killer_demo_results.json"
+          if killer_demo_file.exists():
+              with open(killer_demo_file) as f:
+                  coordination_results["killer_demo"] = json.load(f)
+          
+          # Calculate overall score
+          total_issues = coordination_results["coordination"]["total_issues"]
+          critical_issues = coordination_results["coordination"]["critical_issues"]
+          security_issues = coordination_results["coordination"]["security_issues"]
+          
+          # Score calculation (100 = perfect, 0 = terrible)
+          overall_score = 100
+          overall_score -= critical_issues * 15
+          overall_score -= (total_issues - critical_issues) * 5
+          overall_score -= security_issues * 10
+          overall_score = max(0, overall_score)
+          
+          coordination_results["coordination"]["overall_score"] = overall_score
+          coordination_results["coordination"]["production_readiness"] = (
+              critical_issues == 0 and security_issues == 0 and overall_score >= 70
+          )
+          
+          # Generate recommendations
+          if critical_issues > 0:
+              coordination_results["recommendations"].append(
+                  f"🚨 CRITICAL: Address {critical_issues} critical issues before production"
+              )
+          
+          if security_issues > 0:
+              coordination_results["recommendations"].append(
+                  f"🔒 SECURITY: Review {security_issues} security concerns"
+              )
+          
+          if coordination_results["coordination"]["performance_issues"] > 5:
+              coordination_results["recommendations"].append(
+                  "⚡ PERFORMANCE: Multiple performance issues detected - consider optimization"
+              )
+          
+          if overall_score >= 90:
+              coordination_results["recommendations"].append(
+                  "🎉 EXCELLENT: Code quality is outstanding"
+              )
+          elif overall_score >= 70:
+              coordination_results["recommendations"].append(
+                  "✅ GOOD: Code quality meets production standards"
+              )
+          elif overall_score >= 50:
+              coordination_results["recommendations"].append(
+                  "⚠️ MODERATE: Some improvements needed before production"
+              )
+          else:
+              coordination_results["recommendations"].append(
+                  "🔴 POOR: Significant improvements required"
+              )
+          
+          # Save coordinated results
+          with open("nexus_coordination.json", "w") as f:
+              json.dump(coordination_results, f, indent=2)
+          
+          # Output metrics for GitHub Actions
+          print(f"total_issues={coordination_results['coordination']['total_issues']}")
+          print(f"critical_issues={coordination_results['coordination']['critical_issues']}")
+          print(f"overall_score={coordination_results['coordination']['overall_score']}")
+          print(f"production_ready={str(coordination_results['coordination']['production_readiness']).lower()}")
+          EOF
+          
+          # Extract outputs
+          TOTAL_ISSUES=$(python3 -c "import json; print(json.load(open('nexus_coordination.json'))['coordination']['total_issues'])")
+          CRITICAL_ISSUES=$(python3 -c "import json; print(json.load(open('nexus_coordination.json'))['coordination']['critical_issues'])")
+          OVERALL_SCORE=$(python3 -c "import json; print(json.load(open('nexus_coordination.json'))['coordination']['overall_score'])")
+          PRODUCTION_READY=$(python3 -c "import json; print(str(json.load(open('nexus_coordination.json'))['coordination']['production_readiness']).lower())")
+          
+          echo "total_issues=$TOTAL_ISSUES" >> $GITHUB_OUTPUT
+          echo "critical_issues=$CRITICAL_ISSUES" >> $GITHUB_OUTPUT
+          echo "overall_score=$OVERALL_SCORE" >> $GITHUB_OUTPUT
+          echo "production_ready=$PRODUCTION_READY" >> $GITHUB_OUTPUT
+          
+          echo "🧠 Nexus Coordination Complete:"
+          echo "  Total Issues: $TOTAL_ISSUES"
+          echo "  Critical Issues: $CRITICAL_ISSUES"
+          echo "  Overall Score: $OVERALL_SCORE/100"
+          echo "  Production Ready: $PRODUCTION_READY"
+      
+      - name: 'Create comprehensive analysis report'
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const results = JSON.parse(fs.readFileSync('nexus_coordination.json', 'utf8'));
+            
+            const totalIssues = results.coordination.total_issues;
+            const criticalIssues = results.coordination.critical_issues;
+            const overallScore = results.coordination.overall_score;
+            const productionReady = results.coordination.production_readiness;
+            const scalingRisk = '${{ needs.killer-demo-analysis.outputs.scaling-risk || '0' }}';
+            const performanceGrade = '${{ needs.killer-demo-analysis.outputs.performance-grade || 'N/A' }}';
+            
+            let commentBody = `## 🧠 Gemini Enterprise Architect - Complete Multi-Agent Analysis\n\n`;
+            
+            // Add executive summary
+            commentBody += `### 📊 Executive Summary\n`;
+            commentBody += `- **Overall Score**: ${overallScore}/100\n`;
+            commentBody += `- **Production Ready**: ${productionReady ? '✅ Yes' : '❌ No'}\n`;
+            commentBody += `- **Performance Grade**: ${performanceGrade}\n`;
+            commentBody += `- **Scaling Risk**: ${scalingRisk}/100\n`;
+            commentBody += `- **Total Issues**: ${totalIssues}\n`;
+            commentBody += `- **Critical Issues**: ${criticalIssues}\n\n`;
+            
+            // Add status badges
+            const scoreBadge = overallScore >= 90 ? '🟢 EXCELLENT' : 
+                              overallScore >= 70 ? '🟡 GOOD' : 
+                              overallScore >= 50 ? '🟠 MODERATE' : '🔴 POOR';
+            
+            commentBody += `**Quality Status**: ${scoreBadge} | **Readiness**: ${productionReady ? '✅ READY' : '❌ NOT READY'}\n\n`;
+            
+            // Add agent insights
+            commentBody += `### 🤖 Agent Analysis Summary\n`;
+            
+            for (const [agentName, agentData] of Object.entries(results.agents)) {
+              if (agentData.success && agentData.result) {
+                const issues = agentData.result.issues || [];
+                const suggestions = agentData.result.suggestions || [];
+                
+                commentBody += `#### ${agentName.toUpperCase()} Agent\n`;
+                commentBody += `- **Issues**: ${issues.length}\n`;
+                commentBody += `- **Suggestions**: ${suggestions.length}\n`;
+                
+                // Show top critical issues
+                const criticalAgentIssues = issues.filter(i => i.severity === 'critical').slice(0, 2);
+                if (criticalAgentIssues.length > 0) {
+                  commentBody += `- **Critical Findings**:\n`;
+                  criticalAgentIssues.forEach(issue => {
+                    commentBody += `  - ${issue.description}\n`;
+                  });
+                }
+                commentBody += `\n`;
+              }
+            }
+            
+            // Add killer demo section
+            if (results.killer_demo && Object.keys(results.killer_demo).length > 0) {
+              commentBody += `### 🚀 Killer Demo: Scaling Analysis\n`;
+              commentBody += `- **Risk Score**: ${scalingRisk}/100\n`;
+              commentBody += `- **Performance Grade**: ${performanceGrade}\n`;
+              
+              if (parseInt(scalingRisk) > 70) {
+                commentBody += `- 🔴 **HIGH RISK**: Significant scaling issues detected\n`;
+              } else if (parseInt(scalingRisk) > 40) {
+                commentBody += `- 🟡 **MODERATE RISK**: Some scaling concerns identified\n`;
+              } else {
+                commentBody += `- 🟢 **LOW RISK**: Good scaling characteristics\n`;
+              }
+              commentBody += `\n`;
+            }
+            
+            // Add recommendations
+            if (results.recommendations && results.recommendations.length > 0) {
+              commentBody += `### 🎯 Coordinated Recommendations\n`;
+              results.recommendations.forEach(rec => {
+                commentBody += `- ${rec}\n`;
+              });
+              commentBody += `\n`;
+            }
+            
+            // Add action items for critical issues
+            if (criticalIssues > 0) {
+              commentBody += `### ⚠️ Action Required\n`;
+              commentBody += `**${criticalIssues} critical issues** must be addressed before merging:\n\n`;
+              
+              // Collect critical issues from all agents
+              const allCriticalIssues = [];
+              for (const [agentName, agentData] of Object.entries(results.agents)) {
+                if (agentData.success && agentData.result) {
+                  const critical = (agentData.result.issues || []).filter(i => i.severity === 'critical');
+                  critical.forEach(issue => {
+                    allCriticalIssues.push(`**${agentName}**: ${issue.description}`);
+                  });
+                }
+              }
+              
+              allCriticalIssues.slice(0, 5).forEach((issue, index) => {
+                commentBody += `${index + 1}. ${issue}\n`;
+              });
+              
+              if (allCriticalIssues.length > 5) {
+                commentBody += `... and ${allCriticalIssues.length - 5} more critical issues\n`;
+              }
+              commentBody += `\n`;
+            }
+            
+            commentBody += `---\n`;
+            commentBody += `*🧠 Nexus-coordinated analysis by Gemini Enterprise Architect*\n`;
+            commentBody += `*Analyst • Architect • Developer • QA • Scout • PO agents working in harmony*`;
+            
+            // Update or create comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const existingComment = comments.data.find(comment => 
+              comment.body.includes('🧠 Gemini Enterprise Architect - Complete Multi-Agent Analysis')
+            );
+            
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: commentBody
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+      
+      - name: 'Set comprehensive analysis status'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const criticalIssues = ${{ steps.coordination.outputs.critical_issues }};
+            const overallScore = ${{ steps.coordination.outputs.overall_score }};
+            const productionReady = ${{ steps.coordination.outputs.production_ready }};
+            
+            const state = productionReady ? 'success' : 'failure';
+            const description = productionReady 
+              ? `Analysis complete - Production ready (${overallScore}/100)`
+              : `${criticalIssues} critical issues - Not production ready`;
+            
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: state,
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: description,
+              context: 'gemini/full-analysis'
+            });
+      
+      - name: 'Upload comprehensive analysis report'
+        uses: actions/upload-artifact@v3
+        with:
+          name: gemini-full-analysis-report
+          path: |
+            nexus_coordination.json
+            analysis-results/
+          retention-days: 30
+      
+      - name: 'Quality gate enforcement'
+        if: steps.coordination.outputs.production_ready == 'false'
+        run: |
+          echo "❌ QUALITY GATE FAILURE"
+          echo "::error::Code does not meet production quality standards"
+          echo "Critical issues: ${{ steps.coordination.outputs.critical_issues }}"
+          echo "Overall score: ${{ steps.coordination.outputs.overall_score }}/100"
+          echo "Please address critical issues before merging"
+          exit 1

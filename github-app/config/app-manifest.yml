@@ -1,0 +1,52 @@
+# GitHub App Manifest for Gemini Enterprise Architect
+name: Gemini Enterprise Architect
+description: AI-powered code analysis with killer demo scaling detection, Scout duplicate prevention, and multi-agent validation
+author: Gemini Enterprise Architect Team
+homepage_url: https://github.com/your-org/gemini-cli
+support_url: https://github.com/your-org/gemini-cli/issues
+
+# App configuration
+default_installations:
+  - repository_selection: all
+
+default_permissions:
+  # Repository permissions
+  contents: read
+  issues: write
+  pull_requests: write
+  checks: write
+  statuses: write
+  metadata: read
+  
+  # Security permissions
+  security_events: write
+  vulnerability_alerts: read
+  
+  # Administrative permissions (optional)
+  administration: read
+
+# Webhook events to subscribe to
+default_events:
+  - pull_request
+  - push
+  - issues
+  - check_run
+  - check_suite
+  - status
+  - repository
+  - installation
+  - installation_repositories
+
+# App setup
+setup_url: https://your-domain.com/github-app/setup
+setup_on_update: true
+
+# Webhook configuration
+webhook_url: https://your-domain.com/webhook
+webhook_active: true
+
+# Public app (set to false for private apps)
+public: false
+
+# Request OAuth on install
+request_oauth_on_install: false

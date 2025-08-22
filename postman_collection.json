@@ -1,0 +1,720 @@
+{
+  "info": {
+    "name": "Gemini CLI Enterprise Architect API",
+    "description": "Complete API collection for Gemini CLI Enterprise Architect with authentication, AI agents, security scanning, and monitoring",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "access_token",
+      "value": ""
+    },
+    {
+      "key": "api_key",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('access_token', response.access_token);",
+                  "    pm.test('Login successful', () => {",
+                  "        pm.expect(response.access_token).to.not.be.undefined;",
+                  "    });",
+                  "} else {",
+                  "    pm.test('Login failed', () => {",
+                  "        pm.expect(pm.response.code).to.equal(200);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"user@example.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "me"]
+            }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"your_refresh_token_here\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "refresh"]
+            }
+          }
+        },
+        {
+          "name": "Create API Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"My API Key\",\n  \"permissions\": [\"read\", \"write\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/api-keys",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "api-keys"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "AI Agents",
+      "item": [
+        {
+          "name": "Architect - Design System",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"architect\",\n  \"action\": \"design_system\",\n  \"payload\": {\n    \"requirements\": \"Design a microservices architecture for e-commerce platform\",\n    \"constraints\": [\"cloud-native\", \"scalable\", \"secure\"],\n    \"scale\": \"medium\"\n  },\n  \"context\": {\n    \"project_type\": \"ecommerce\",\n    \"team_size\": \"10-15 developers\"\n  },\n  \"timeout\": 60\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/agent/request",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "agent", "request"]
+            }
+          }
+        },
+        {
+          "name": "Developer - Code Review",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"developer\",\n  \"action\": \"code_review\",\n  \"payload\": {\n    \"code\": \"def calculate_total(items):\\n    total = 0\\n    for item in items:\\n        total += item.price * item.quantity\\n    return total\",\n    \"language\": \"python\",\n    \"focus_areas\": [\"performance\", \"security\", \"maintainability\"]\n  },\n  \"timeout\": 30\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/agent/request",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "agent", "request"]
+            }
+          }
+        },
+        {
+          "name": "Analyst - Requirements Analysis",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"analyst\",\n  \"action\": \"analyze_requirements\",\n  \"payload\": {\n    \"requirements\": \"We need a user authentication system with social login, multi-factor authentication, and role-based access control\",\n    \"stakeholders\": [\"end users\", \"administrators\", \"security team\"],\n    \"constraints\": [\"GDPR compliance\", \"high availability\"]\n  },\n  \"timeout\": 45\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/agent/request",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "agent", "request"]
+            }
+          }
+        },
+        {
+          "name": "QA - Test Plan Generation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"qa\",\n  \"action\": \"generate_test_plan\",\n  \"payload\": {\n    \"feature\": \"User registration API\",\n    \"test_types\": [\"unit\", \"integration\", \"security\", \"performance\"],\n    \"coverage_target\": 90\n  },\n  \"timeout\": 40\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/agent/request",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "agent", "request"]
+            }
+          }
+        },
+        {
+          "name": "Batch Agent Requests",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  {\n    \"type\": \"analyst\",\n    \"action\": \"analyze_requirements\",\n    \"payload\": {\"requirements\": \"User authentication system\"}\n  },\n  {\n    \"type\": \"architect\",\n    \"action\": \"design_api\",\n    \"payload\": {\"requirements\": \"REST API for user management\"}\n  },\n  {\n    \"type\": \"developer\",\n    \"action\": \"estimate_effort\",\n    \"payload\": {\"features\": [\"login\", \"registration\", \"password reset\"]}\n  }\n]"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/agent/batch",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "agent", "batch"]
+            }
+          }
+        },
+        {
+          "name": "List Available Agents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/agents",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "agents"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Security Scanning",
+      "item": [
+        {
+          "name": "Start Security Scan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target\": \"/path/to/project\",\n  \"scan_types\": [\"dependencies\", \"code\", \"secrets\", \"docker\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/security/scan",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "security", "scan"]
+            }
+          }
+        },
+        {
+          "name": "Upload File for Scanning",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                },
+                {
+                  "key": "scan_types",
+                  "value": "dependencies,code,secrets",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/security/scan/upload",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "security", "scan", "upload"]
+            }
+          }
+        },
+        {
+          "name": "List Security Scans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/security/scans?limit=50&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "security", "scans"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Security Findings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/security/findings?severity=high&limit=100",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "security", "findings"],
+              "query": [
+                {
+                  "key": "severity",
+                  "value": "high"
+                },
+                {
+                  "key": "limit",
+                  "value": "100"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Compliance Report - OWASP",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/security/compliance/report?framework=owasp",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "security", "compliance", "report"],
+              "query": [
+                {
+                  "key": "framework",
+                  "value": "owasp"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Vulnerability Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/security/vulnerabilities/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "security", "vulnerabilities", "dashboard"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Monitoring & Metrics",
+      "item": [
+        {
+          "name": "DORA Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitoring/dora?days=30",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "monitoring", "dora"],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "30"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Performance Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitoring/performance",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "monitoring", "performance"]
+            }
+          }
+        },
+        {
+          "name": "Dashboard Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitoring/dashboard/summary",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "monitoring", "dashboard", "summary"]
+            }
+          }
+        },
+        {
+          "name": "Deployment Frequency Trend",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitoring/dora/deployment-frequency?days=30&granularity=day",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "monitoring", "dora", "deployment-frequency"],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "30"
+                },
+                {
+                  "key": "granularity",
+                  "value": "day"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Response Time Trend",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitoring/performance/response-time?hours=24&percentile=95",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "monitoring", "performance", "response-time"],
+              "query": [
+                {
+                  "key": "hours",
+                  "value": "24"
+                },
+                {
+                  "key": "percentile",
+                  "value": "95"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Record Deployment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"commit_sha\": \"abc123def456\",\n  \"environment\": \"production\",\n  \"status\": \"success\",\n  \"start_time\": \"2024-01-15T10:00:00Z\",\n  \"end_time\": \"2024-01-15T10:05:00Z\",\n  \"metadata\": {\n    \"service\": \"user-api\",\n    \"version\": \"v1.2.3\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitoring/dora/deployment",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "monitoring", "dora", "deployment"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Document Search (RAG)",
+      "item": [
+        {
+          "name": "Search Documents",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"authentication best practices JWT security\",\n  \"filters\": {\n    \"file_type\": \"markdown\",\n    \"tags\": [\"security\", \"authentication\"]\n  },\n  \"limit\": 10\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/rag/search",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "rag", "search"]
+            }
+          }
+        },
+        {
+          "name": "Chat with Documents",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"How should I implement OAuth2 authentication in my FastAPI application?\",\n  \"context\": {\n    \"project_type\": \"web_api\",\n    \"framework\": \"fastapi\"\n  },\n  \"include_sources\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/rag/chat",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "rag", "chat"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "System Health",
+      "item": [
+        {
+          "name": "Basic Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            }
+          }
+        },
+        {
+          "name": "Detailed Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitoring/health/detailed",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "monitoring", "health", "detailed"]
+            }
+          }
+        },
+        {
+          "name": "System Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/metrics",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "metrics"]
+            }
+          }
+        },
+        {
+          "name": "Prometheus Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/metrics",
+              "host": ["{{base_url}}"],
+              "path": ["metrics"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin Operations",
+      "item": [
+        {
+          "name": "Create User (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"newuser\",\n  \"email\": \"newuser@example.com\",\n  \"password\": \"securepassword123\",\n  \"full_name\": \"New User\",\n  \"role\": \"user\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/users",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "users"]
+            }
+          }
+        },
+        {
+          "name": "List Users (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/users?skip=0&limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "users"],
+              "query": [
+                {
+                  "key": "skip",
+                  "value": "0"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Add to Security Whitelist (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "finding_id",
+                  "value": "sec_123",
+                  "type": "text"
+                },
+                {
+                  "key": "reason",
+                  "value": "False positive - validated by security team",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/security/whitelist",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "security", "whitelist"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Auto-set authorization header if access token is available",
+          "const token = pm.collectionVariables.get('access_token');",
+          "if (token && !pm.request.headers.has('Authorization')) {",
+          "    pm.request.headers.add({",
+          "        key: 'Authorization',",
+          "        value: `Bearer ${token}`",
+          "    });",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Global test to check for common response patterns",
+          "pm.test('Response has valid structure', () => {",
+          "    if (pm.response.code >= 200 && pm.response.code < 300) {",
+          "        // Success response should have some content",
+          "        pm.expect(pm.response.text().length).to.be.greaterThan(0);",
+          "    } else if (pm.response.code >= 400) {",
+          "        // Error response should have error structure",
+          "        const response = pm.response.json();",
+          "        pm.expect(response).to.have.property('error');",
+          "    }",
+          "});",
+          "",
+          "// Check for rate limiting headers",
+          "if (pm.response.headers.has('X-RateLimit-Remaining')) {",
+          "    const remaining = parseInt(pm.response.headers.get('X-RateLimit-Remaining'));",
+          "    if (remaining < 10) {",
+          "        console.warn(`Rate limit warning: ${remaining} requests remaining`);",
+          "    }",
+          "}"
+        ]
+      }
+    }
+  ]
+}

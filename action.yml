@@ -1,0 +1,426 @@
+name: 'Gemini Enterprise Architect Analysis'
+description: 'AI-powered code analysis with killer demo scaling detection, Scout duplicate prevention, and multi-agent validation'
+author: 'Gemini Enterprise Architect Team'
+
+branding:
+  icon: 'search'
+  color: 'blue'
+
+inputs:
+  server-url:
+    description: 'FastAPI agent server URL'
+    required: true
+    default: 'http://localhost:8000'
+  
+  github-token:
+    description: 'GitHub token for API access'
+    required: true
+  
+  analysis-types:
+    description: 'Comma-separated analysis types (scaling,duplicates,review,guardian)'
+    required: false
+    default: 'scaling,duplicates,review'
+  
+  severity-threshold:
+    description: 'Minimum severity level to report (low,medium,high,critical)'
+    required: false
+    default: 'medium'
+  
+  fail-on-critical:
+    description: 'Fail the action if critical issues are found'
+    required: false
+    default: 'true'
+  
+  cache-enabled:
+    description: 'Enable caching for performance'
+    required: false
+    default: 'true'
+  
+  max-files:
+    description: 'Maximum number of files to analyze'
+    required: false
+    default: '100'
+  
+  timeout:
+    description: 'Analysis timeout in seconds'
+    required: false
+    default: '300'
+  
+  comment-mode:
+    description: 'PR comment mode (create,update,none)'
+    required: false
+    default: 'create'
+  
+  duplicate-threshold:
+    description: 'Duplicate detection similarity threshold (0.0-1.0)'
+    required: false
+    default: '0.8'
+
+outputs:
+  scaling-issues-count:
+    description: 'Number of scaling issues found'
+  
+  duplicates-count:
+    description: 'Number of duplicates found'
+  
+  risk-score:
+    description: 'Overall risk score (0-100)'
+  
+  production-ready:
+    description: 'Whether code is production ready'
+  
+  analysis-summary:
+    description: 'JSON summary of all analysis results'
+  
+  report-url:
+    description: 'URL to detailed analysis report'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 'Checkout code'
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: 'Setup Python'
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: 'Cache dependencies'
+      if: inputs.cache-enabled == 'true'
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-gemini-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-gemini-
+    
+    - name: 'Install dependencies'
+      shell: bash
+      run: |
+        pip install requests python-multipart aiohttp asyncio
+    
+    - name: 'Wait for agent server'
+      shell: bash
+      run: |
+        echo "Waiting for agent server at ${{ inputs.server-url }}"
+        timeout=60
+        while ! curl -s "${{ inputs.server-url }}/api/v1/health" > /dev/null 2>&1; do
+          sleep 2
+          timeout=$((timeout - 2))
+          if [ $timeout -le 0 ]; then
+            echo "❌ Agent server not available at ${{ inputs.server-url }}"
+            echo "Make sure the FastAPI server is running"
+            exit 1
+          fi
+        done
+        echo "✅ Agent server is ready"
+    
+    - name: 'Get changed files'
+      id: changed-files
+      shell: bash
+      run: |
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          # Get files changed in PR
+          CHANGED_FILES=$(curl -s -H "Authorization: token ${{ inputs.github-token }}" \
+            "${{ github.api_url }}/repos/${{ github.repository }}/pulls/${{ github.event.number }}/files" | \
+            jq -r '.[].filename' | head -n ${{ inputs.max-files }})
+        else
+          # Get files changed in push
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD | head -n ${{ inputs.max-files }})
+        fi
+        
+        echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+        echo "$CHANGED_FILES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        echo "🔍 Files to analyze:"
+        echo "$CHANGED_FILES"
+    
+    - name: 'Run scaling analysis'
+      if: contains(inputs.analysis-types, 'scaling')
+      id: scaling-analysis
+      shell: bash
+      run: |
+        echo "🔍 Running killer demo scaling analysis..."
+        
+        # Create analysis request
+        cat > scaling_request.json << EOF
+        {
+          "id": "scaling-${{ github.run_id }}",
+          "type": "developer",
+          "action": "analyze_scaling",
+          "payload": {
+            "files": $(echo '${{ steps.changed-files.outputs.changed_files }}' | jq -R 'split("\n") | map(select(. != ""))'),
+            "severity_threshold": "${{ inputs.severity-threshold }}",
+            "repository": "${{ github.repository }}",
+            "pr_number": "${{ github.event.number }}",
+            "commit_sha": "${{ github.sha }}"
+          },
+          "context": {
+            "github_event": "${{ github.event_name }}",
+            "workflow": "${{ github.workflow }}",
+            "run_id": "${{ github.run_id }}"
+          },
+          "timeout": ${{ inputs.timeout }}
+        }
+        EOF
+        
+        # Send request to agent server
+        RESPONSE=$(curl -s -X POST "${{ inputs.server-url }}/api/v1/agent/request" \
+          -H "Content-Type: application/json" \
+          -d @scaling_request.json)
+        
+        echo "scaling_response<<EOF" >> $GITHUB_OUTPUT
+        echo "$RESPONSE" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        # Extract key metrics
+        ISSUES_COUNT=$(echo "$RESPONSE" | jq -r '.result.issues | length // 0')
+        RISK_SCORE=$(echo "$RESPONSE" | jq -r '.result.risk_score // 0')
+        PRODUCTION_READY=$(echo "$RESPONSE" | jq -r '.result.production_readiness // false')
+        
+        echo "scaling_issues_count=$ISSUES_COUNT" >> $GITHUB_OUTPUT
+        echo "risk_score=$RISK_SCORE" >> $GITHUB_OUTPUT
+        echo "production_ready=$PRODUCTION_READY" >> $GITHUB_OUTPUT
+        
+        echo "📊 Scaling Analysis Results:"
+        echo "  Issues: $ISSUES_COUNT"
+        echo "  Risk Score: $RISK_SCORE"
+        echo "  Production Ready: $PRODUCTION_READY"
+    
+    - name: 'Run duplicate detection'
+      if: contains(inputs.analysis-types, 'duplicates')
+      id: duplicate-analysis
+      shell: bash
+      run: |
+        echo "🔍 Running Scout duplicate detection..."
+        
+        # Get duplicates from Scout endpoint
+        DUPLICATES_RESPONSE=$(curl -s "${{ inputs.server-url }}/api/v1/scout/duplicates?similarity_threshold=${{ inputs.duplicate-threshold }}")
+        
+        echo "duplicates_response<<EOF" >> $GITHUB_OUTPUT
+        echo "$DUPLICATES_RESPONSE" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        DUPLICATES_COUNT=$(echo "$DUPLICATES_RESPONSE" | jq -r '.total_count // 0')
+        echo "duplicates_count=$DUPLICATES_COUNT" >> $GITHUB_OUTPUT
+        
+        echo "📊 Duplicate Detection Results:"
+        echo "  Duplicates Found: $DUPLICATES_COUNT"
+    
+    - name: 'Run code review analysis'
+      if: contains(inputs.analysis-types, 'review')
+      id: code-review
+      shell: bash
+      run: |
+        echo "🔍 Running AI-powered code review..."
+        
+        cat > review_request.json << EOF
+        {
+          "id": "review-${{ github.run_id }}",
+          "type": "qa",
+          "action": "review_code",
+          "payload": {
+            "files": $(echo '${{ steps.changed-files.outputs.changed_files }}' | jq -R 'split("\n") | map(select(. != ""))'),
+            "repository": "${{ github.repository }}",
+            "pr_number": "${{ github.event.number }}",
+            "commit_sha": "${{ github.sha }}"
+          },
+          "context": {
+            "github_event": "${{ github.event_name }}",
+            "review_type": "comprehensive"
+          },
+          "timeout": ${{ inputs.timeout }}
+        }
+        EOF
+        
+        REVIEW_RESPONSE=$(curl -s -X POST "${{ inputs.server-url }}/api/v1/agent/request" \
+          -H "Content-Type: application/json" \
+          -d @review_request.json)
+        
+        echo "review_response<<EOF" >> $GITHUB_OUTPUT
+        echo "$REVIEW_RESPONSE" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        echo "✅ Code review analysis completed"
+    
+    - name: 'Run Guardian validation'
+      if: contains(inputs.analysis-types, 'guardian')
+      id: guardian-validation
+      shell: bash
+      run: |
+        echo "🔍 Running Guardian validation..."
+        
+        cat > guardian_request.json << EOF
+        {
+          "id": "guardian-${{ github.run_id }}",
+          "type": "architect",
+          "action": "validate_architecture",
+          "payload": {
+            "files": $(echo '${{ steps.changed-files.outputs.changed_files }}' | jq -R 'split("\n") | map(select(. != ""))'),
+            "repository": "${{ github.repository }}",
+            "pr_number": "${{ github.event.number }}"
+          },
+          "context": {
+            "validation_type": "guardian",
+            "strict_mode": true
+          },
+          "timeout": ${{ inputs.timeout }}
+        }
+        EOF
+        
+        GUARDIAN_RESPONSE=$(curl -s -X POST "${{ inputs.server-url }}/api/v1/agent/request" \
+          -H "Content-Type: application/json" \
+          -d @guardian_request.json)
+        
+        echo "guardian_response<<EOF" >> $GITHUB_OUTPUT
+        echo "$GUARDIAN_RESPONSE" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        echo "✅ Guardian validation completed"
+    
+    - name: 'Generate analysis summary'
+      id: summary
+      shell: bash
+      run: |
+        echo "📋 Generating analysis summary..."
+        
+        # Combine all results into summary
+        cat > analysis_summary.json << EOF
+        {
+          "repository": "${{ github.repository }}",
+          "pr_number": "${{ github.event.number }}",
+          "commit_sha": "${{ github.sha }}",
+          "workflow_run_id": "${{ github.run_id }}",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          "scaling_analysis": ${{ steps.scaling-analysis.outputs.scaling_response || 'null' }},
+          "duplicate_detection": ${{ steps.duplicate-analysis.outputs.duplicates_response || 'null' }},
+          "code_review": ${{ steps.code-review.outputs.review_response || 'null' }},
+          "guardian_validation": ${{ steps.guardian-validation.outputs.guardian_response || 'null' }},
+          "metrics": {
+            "scaling_issues": ${{ steps.scaling-analysis.outputs.scaling_issues_count || '0' }},
+            "duplicates": ${{ steps.duplicate-analysis.outputs.duplicates_count || '0' }},
+            "risk_score": ${{ steps.scaling-analysis.outputs.risk_score || '0' }},
+            "production_ready": ${{ steps.scaling-analysis.outputs.production_ready || 'false' }}
+          }
+        }
+        EOF
+        
+        echo "analysis_summary<<EOF" >> $GITHUB_OUTPUT
+        cat analysis_summary.json >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+    
+    - name: 'Create PR comment'
+      if: github.event_name == 'pull_request' && inputs.comment-mode != 'none'
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const summary = JSON.parse(`${{ steps.summary.outputs.analysis_summary }}`);
+          const scalingIssues = summary.metrics.scaling_issues;
+          const duplicates = summary.metrics.duplicates;
+          const riskScore = summary.metrics.risk_score;
+          const productionReady = summary.metrics.production_ready;
+          
+          // Generate comment body
+          let commentBody = `## 🤖 Gemini Enterprise Architect Analysis\n\n`;
+          
+          // Add summary metrics
+          commentBody += `### 📊 Summary\n`;
+          commentBody += `- **Risk Score**: ${riskScore}/100\n`;
+          commentBody += `- **Production Ready**: ${productionReady ? '✅ Yes' : '❌ No'}\n`;
+          commentBody += `- **Scaling Issues**: ${scalingIssues}\n`;
+          commentBody += `- **Duplicates**: ${duplicates}\n\n`;
+          
+          // Add scaling analysis section
+          if (summary.scaling_analysis && summary.scaling_analysis.result) {
+            commentBody += `### 🚀 Killer Demo: Scaling Analysis\n`;
+            const issues = summary.scaling_analysis.result.issues || [];
+            
+            if (issues.length === 0) {
+              commentBody += `✅ No scaling issues detected!\n\n`;
+            } else {
+              const criticalIssues = issues.filter(i => i.severity === 'critical');
+              const highIssues = issues.filter(i => i.severity === 'high');
+              
+              if (criticalIssues.length > 0) {
+                commentBody += `🔴 **Critical Issues (${criticalIssues.length})**\n`;
+                criticalIssues.slice(0, 3).forEach(issue => {
+                  commentBody += `- **${issue.type}** in \`${issue.file_path}:${issue.line_number}\`\n`;
+                  commentBody += `  ${issue.description}\n`;
+                  commentBody += `  💡 ${issue.fix_recommendation}\n\n`;
+                });
+              }
+              
+              if (highIssues.length > 0) {
+                commentBody += `🟠 **High Priority Issues (${highIssues.length})**\n`;
+                highIssues.slice(0, 2).forEach(issue => {
+                  commentBody += `- **${issue.type}** in \`${issue.file_path}:${issue.line_number}\`\n`;
+                  commentBody += `  ${issue.description}\n\n`;
+                });
+              }
+            }
+          }
+          
+          // Add duplicate detection section
+          if (summary.duplicate_detection && duplicates > 0) {
+            commentBody += `### 🔍 Scout: Duplicate Detection\n`;
+            commentBody += `Found ${duplicates} potential duplicates. Consider refactoring to reduce code duplication.\n\n`;
+          }
+          
+          // Add recommendations
+          if (summary.scaling_analysis && summary.scaling_analysis.result && summary.scaling_analysis.result.recommendations) {
+            commentBody += `### 💡 Recommendations\n`;
+            summary.scaling_analysis.result.recommendations.forEach(rec => {
+              commentBody += `- ${rec}\n`;
+            });
+            commentBody += `\n`;
+          }
+          
+          commentBody += `---\n`;
+          commentBody += `*Analysis powered by Gemini Enterprise Architect • [Learn more](https://github.com/${{ github.repository }})*`;
+          
+          // Check if comment should be updated or created
+          const comments = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+          
+          const existingComment = comments.data.find(comment => 
+            comment.body.includes('🤖 Gemini Enterprise Architect Analysis')
+          );
+          
+          if (existingComment && '${{ inputs.comment-mode }}' === 'update') {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existingComment.id,
+              body: commentBody
+            });
+          } else if ('${{ inputs.comment-mode }}' === 'create') {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: commentBody
+            });
+          }
+    
+    - name: 'Check failure conditions'
+      shell: bash
+      run: |
+        if [ "${{ inputs.fail-on-critical }}" = "true" ]; then
+          CRITICAL_ISSUES=$(echo '${{ steps.summary.outputs.analysis_summary }}' | jq -r '.scaling_analysis.result.issues[] | select(.severity == "critical") | .type' | wc -l || echo "0")
+          
+          if [ "$CRITICAL_ISSUES" -gt 0 ]; then
+            echo "❌ Found $CRITICAL_ISSUES critical scaling issues"
+            echo "::error::Critical scaling issues found. Fix these before merging."
+            exit 1
+          fi
+        fi
+        
+        echo "✅ All checks passed!"

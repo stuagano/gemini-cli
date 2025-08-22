@@ -1,0 +1,280 @@
+global:
+  # SMTP configuration for email alerts
+  smtp_smarthost: 'smtp.gmail.com:587'
+  smtp_from: 'alerts@gemini.ai'
+  smtp_auth_username: 'alerts@gemini.ai'
+  smtp_auth_password: '${SMTP_PASSWORD}'
+  smtp_require_tls: true
+  
+  # Slack configuration
+  slack_api_url: '${SLACK_WEBHOOK_URL}'
+  
+  # PagerDuty configuration
+  pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
+
+# Templates for alert messages
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Route tree for alert routing
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+  receiver: 'default-receiver'
+  
+  # Specific routing rules
+  routes:
+  
+  # Critical alerts go to PagerDuty immediately
+  - match:
+      severity: critical
+    receiver: 'pagerduty-critical'
+    group_wait: 0s
+    repeat_interval: 5m
+    continue: true
+    
+  # Security alerts go to security team
+  - match:
+      team: security
+    receiver: 'security-team'
+    group_wait: 30s
+    repeat_interval: 15m
+    continue: true
+    
+  # Platform team alerts
+  - match:
+      team: platform
+    receiver: 'platform-team'
+    group_wait: 30s
+    repeat_interval: 30m
+    continue: true
+    
+  # Intelligence team alerts (agents, scout, knowledge)
+  - match:
+      team: intelligence
+    receiver: 'intelligence-team'
+    group_wait: 30s
+    repeat_interval: 30m
+    continue: true
+    
+  # Optimization team alerts (killer demo, cost)
+  - match:
+      team: optimization
+    receiver: 'optimization-team'
+    group_wait: 1m
+    repeat_interval: 1h
+    continue: true
+    
+  # Finance team alerts (cost monitoring)
+  - match:
+      team: finance
+    receiver: 'finance-team'
+    group_wait: 1m
+    repeat_interval: 2h
+    continue: true
+    
+  # Business hours only routing
+  - match:
+      severity: info
+    receiver: 'business-hours-only'
+    active_time_intervals:
+      - business-hours
+    
+  # Weekend critical alerts
+  - match:
+      severity: critical
+    receiver: 'weekend-critical'
+    active_time_intervals:
+      - weekends
+
+# Inhibition rules to reduce alert noise
+inhibit_rules:
+  # Inhibit warning alerts if critical alert for same service is firing
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['service', 'instance']
+    
+  # Inhibit agent-specific alerts if agent server is down
+  - source_match:
+      alertname: 'GeminiAgentServerDown'
+    target_match_re:
+      alertname: 'GeminiAgent.*'
+    equal: ['instance']
+    
+  # Inhibit database alerts if database is down
+  - source_match:
+      alertname: 'GeminiDatabaseConnectionFailed'
+    target_match_re:
+      alertname: 'GeminiDatabase.*'
+    equal: ['instance']
+
+# Time intervals for routing
+time_intervals:
+  - name: business-hours
+    time_intervals:
+      - times:
+          - start_time: '09:00'
+            end_time: '17:00'
+        weekdays: ['monday:friday']
+        location: 'America/New_York'
+        
+  - name: weekends
+    time_intervals:
+      - weekdays: ['saturday', 'sunday']
+        location: 'America/New_York'
+
+# Receivers define how to send alerts
+receivers:
+
+# Default receiver (Slack general channel)
+- name: 'default-receiver'
+  slack_configs:
+  - api_url: '${SLACK_WEBHOOK_URL}'
+    channel: '#gemini-alerts'
+    title: 'Gemini Alert: {{ .GroupLabels.alertname }}'
+    text: |
+      {{ range .Alerts }}
+      **{{ .Annotations.summary }}**
+      {{ .Annotations.description }}
+      
+      Severity: {{ .Labels.severity }}
+      Service: {{ .Labels.service }}
+      Team: {{ .Labels.team }}
+      
+      {{ if .Annotations.runbook_url }}
+      [Runbook]({{ .Annotations.runbook_url }})
+      {{ end }}
+      {{ end }}
+    send_resolved: true
+
+# PagerDuty for critical alerts
+- name: 'pagerduty-critical'
+  pagerduty_configs:
+  - routing_key: '${PAGERDUTY_INTEGRATION_KEY_CRITICAL}'
+    description: '{{ .GroupLabels.alertname }}: {{ .CommonAnnotations.summary }}'
+    details:
+      severity: '{{ .CommonLabels.severity }}'
+      service: '{{ .CommonLabels.service }}'
+      team: '{{ .CommonLabels.team }}'
+      description: '{{ .CommonAnnotations.description }}'
+      runbook_url: '{{ .CommonAnnotations.runbook_url }}'
+    links:
+    - href: '{{ .CommonAnnotations.runbook_url }}'
+      text: 'Runbook'
+
+# Security team notifications
+- name: 'security-team'
+  email_configs:
+  - to: 'security-team@gemini.ai'
+    subject: '[SECURITY] Gemini Alert: {{ .GroupLabels.alertname }}'
+    body: |
+      Security Alert Detected
+      
+      {{ range .Alerts }}
+      Summary: {{ .Annotations.summary }}
+      Description: {{ .Annotations.description }}
+      Service: {{ .Labels.service }}
+      Severity: {{ .Labels.severity }}
+      
+      {{ if .Annotations.runbook_url }}
+      Runbook: {{ .Annotations.runbook_url }}
+      {{ end }}
+      {{ end }}
+  slack_configs:
+  - api_url: '${SLACK_WEBHOOK_URL}'
+    channel: '#security-alerts'
+    title: '🔒 Security Alert: {{ .GroupLabels.alertname }}'
+    text: |
+      {{ range .Alerts }}
+      **{{ .Annotations.summary }}**
+      {{ .Annotations.description }}
+      {{ end }}
+
+# Platform team notifications
+- name: 'platform-team'
+  slack_configs:
+  - api_url: '${SLACK_WEBHOOK_URL}'
+    channel: '#platform-alerts'
+    title: '⚙️ Platform Alert: {{ .GroupLabels.alertname }}'
+    text: |
+      {{ range .Alerts }}
+      **{{ .Annotations.summary }}**
+      {{ .Annotations.description }}
+      
+      Service: {{ .Labels.service }}
+      Severity: {{ .Labels.severity }}
+      {{ end }}
+  email_configs:
+  - to: 'platform-team@gemini.ai'
+    subject: '[PLATFORM] {{ .GroupLabels.alertname }}'
+
+# Intelligence team notifications (AI/ML team)
+- name: 'intelligence-team'
+  slack_configs:
+  - api_url: '${SLACK_WEBHOOK_URL}'
+    channel: '#intelligence-alerts'
+    title: '🧠 Intelligence Alert: {{ .GroupLabels.alertname }}'
+    text: |
+      {{ range .Alerts }}
+      **{{ .Annotations.summary }}**
+      {{ .Annotations.description }}
+      
+      Service: {{ .Labels.service }}
+      Agent: {{ .Labels.agent_type }}
+      {{ end }}
+
+# Optimization team notifications
+- name: 'optimization-team'
+  slack_configs:
+  - api_url: '${SLACK_WEBHOOK_URL}'
+    channel: '#optimization-alerts'
+    title: '📈 Optimization Alert: {{ .GroupLabels.alertname }}'
+    text: |
+      {{ range .Alerts }}
+      **{{ .Annotations.summary }}**
+      {{ .Annotations.description }}
+      
+      {{ if .Labels.cost_impact }}
+      Cost Impact: ${{ .Labels.cost_impact }}
+      {{ end }}
+      {{ end }}
+
+# Finance team notifications
+- name: 'finance-team'
+  email_configs:
+  - to: 'finance-team@gemini.ai'
+    subject: '[COST] {{ .GroupLabels.alertname }}'
+    body: |
+      Cost Alert Detected
+      
+      {{ range .Alerts }}
+      Summary: {{ .Annotations.summary }}
+      Description: {{ .Annotations.description }}
+      Service: {{ .Labels.service }}
+      {{ end }}
+
+# Business hours only alerts
+- name: 'business-hours-only'
+  slack_configs:
+  - api_url: '${SLACK_WEBHOOK_URL}'
+    channel: '#gemini-info'
+    title: 'ℹ️ Info: {{ .GroupLabels.alertname }}'
+    text: |
+      {{ range .Alerts }}
+      {{ .Annotations.summary }}
+      {{ .Annotations.description }}
+      {{ end }}
+
+# Weekend critical alerts (reduced notifications)
+- name: 'weekend-critical'
+  pagerduty_configs:
+  - routing_key: '${PAGERDUTY_INTEGRATION_KEY_WEEKEND}'
+    description: '[WEEKEND] {{ .GroupLabels.alertname }}: {{ .CommonAnnotations.summary }}'
+  slack_configs:
+  - api_url: '${SLACK_WEBHOOK_URL}'
+    channel: '#weekend-critical'
+    title: '🚨 Weekend Critical: {{ .GroupLabels.alertname }}'

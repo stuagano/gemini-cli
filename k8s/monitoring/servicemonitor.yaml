@@ -1,0 +1,157 @@
+# Prometheus ServiceMonitor for Gemini Agent Server
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: gemini-agent-server-monitor
+  namespace: gemini-${ENVIRONMENT}
+  labels:
+    app: gemini-agent-server
+    environment: ${ENVIRONMENT}
+    monitoring: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: gemini-agent-server
+      environment: ${ENVIRONMENT}
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    honorLabels: true
+  namespaceSelector:
+    matchNames:
+    - gemini-${ENVIRONMENT}
+
+---
+# PrometheusRule for alerting
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: gemini-agent-server-alerts
+  namespace: gemini-${ENVIRONMENT}
+  labels:
+    app: gemini-agent-server
+    environment: ${ENVIRONMENT}
+    monitoring: prometheus
+spec:
+  groups:
+  - name: gemini-agent-server.rules
+    interval: 30s
+    rules:
+    
+    # High Error Rate Alert
+    - alert: GeminiHighErrorRate
+      expr: |
+        (
+          rate(http_requests_total{job="gemini-agent-server", status=~"5.."}[5m]) /
+          rate(http_requests_total{job="gemini-agent-server"}[5m])
+        ) * 100 > 5
+      for: 5m
+      labels:
+        severity: critical
+        service: gemini-agent-server
+        environment: ${ENVIRONMENT}
+      annotations:
+        summary: "High error rate detected"
+        description: "Error rate is {{ $value }}% for {{ $labels.instance }}"
+        
+    # High Response Time Alert
+    - alert: GeminiHighResponseTime
+      expr: |
+        histogram_quantile(0.95,
+          rate(http_request_duration_seconds_bucket{job="gemini-agent-server"}[5m])
+        ) > 0.5
+      for: 5m
+      labels:
+        severity: warning
+        service: gemini-agent-server
+        environment: ${ENVIRONMENT}
+      annotations:
+        summary: "High response time detected"
+        description: "95th percentile response time is {{ $value }}s for {{ $labels.instance }}"
+        
+    # Pod Down Alert
+    - alert: GeminiPodDown
+      expr: |
+        up{job="gemini-agent-server"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        service: gemini-agent-server
+        environment: ${ENVIRONMENT}
+      annotations:
+        summary: "Gemini Agent Server pod is down"
+        description: "Pod {{ $labels.instance }} has been down for more than 1 minute"
+        
+    # High Memory Usage Alert
+    - alert: GeminiHighMemoryUsage
+      expr: |
+        (
+          container_memory_working_set_bytes{pod=~"agent-server-.*"} /
+          container_spec_memory_limit_bytes{pod=~"agent-server-.*"}
+        ) * 100 > 80
+      for: 5m
+      labels:
+        severity: warning
+        service: gemini-agent-server
+        environment: ${ENVIRONMENT}
+      annotations:
+        summary: "High memory usage detected"
+        description: "Memory usage is {{ $value }}% for pod {{ $labels.pod }}"
+        
+    # High CPU Usage Alert
+    - alert: GeminiHighCPUUsage
+      expr: |
+        (
+          rate(container_cpu_usage_seconds_total{pod=~"agent-server-.*"}[5m]) /
+          container_spec_cpu_quota{pod=~"agent-server-.*"} * 
+          container_spec_cpu_period{pod=~"agent-server-.*"}
+        ) * 100 > 80
+      for: 5m
+      labels:
+        severity: warning
+        service: gemini-agent-server
+        environment: ${ENVIRONMENT}
+      annotations:
+        summary: "High CPU usage detected"
+        description: "CPU usage is {{ $value }}% for pod {{ $labels.pod }}"
+        
+    # Database Connection Alert
+    - alert: GeminiDatabaseConnectionFailed
+      expr: |
+        gemini_database_connections_failed_total > 0
+      for: 1m
+      labels:
+        severity: critical
+        service: gemini-agent-server
+        environment: ${ENVIRONMENT}
+      annotations:
+        summary: "Database connection failures detected"
+        description: "{{ $value }} database connection failures in the last minute"
+        
+    # Agent Processing Queue Alert
+    - alert: GeminiAgentQueueBacklog
+      expr: |
+        gemini_agent_queue_size > 100
+      for: 5m
+      labels:
+        severity: warning
+        service: gemini-agent-server
+        environment: ${ENVIRONMENT}
+      annotations:
+        summary: "Agent processing queue backlog"
+        description: "Agent queue has {{ $value }} pending requests"
+        
+    # Killer Demo Detection Alert
+    - alert: GeminiScalingIssuesDetected
+      expr: |
+        increase(gemini_scaling_issues_detected_total[1h]) > 0
+      for: 0m
+      labels:
+        severity: info
+        service: gemini-agent-server
+        environment: ${ENVIRONMENT}
+      annotations:
+        summary: "Scaling issues detected by Killer Demo"
+        description: "{{ $value }} scaling issues detected in the last hour"

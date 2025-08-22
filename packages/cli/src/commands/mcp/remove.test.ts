@@ -6,7 +6,7 @@
 
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import yargs from 'yargs';
-import { loadSettings, SettingScope } from '../../config/settings.js';
+import { loadSettings, LoadedSettings, SettingScope } from '../../config/settings.js';
 import { removeCommand } from './remove.js';
 
 vi.mock('fs/promises', () => ({
@@ -42,9 +42,9 @@ describe('mcp remove command', () => {
       },
     };
     mockedLoadSettings.mockReturnValue({
-      forScope: () => ({ settings: mockSettings }),
+      merged: mockSettings,
       setValue: mockSetValue,
-    });
+    } as Partial<LoadedSettings>);
   });
 
   it('should remove a server from project settings', async () => {

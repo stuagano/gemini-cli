@@ -1,0 +1,376 @@
+groups:
+  # Critical System Alerts
+  - name: gemini.critical
+    interval: 30s
+    rules:
+    
+    # Agent Server Down
+    - alert: GeminiAgentServerDown
+      expr: up{job="gemini-agent-server"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        service: agent-server
+        team: platform
+      annotations:
+        summary: "Gemini Agent Server is down"
+        description: "Agent server {{ $labels.instance }} has been down for more than 1 minute"
+        runbook_url: "https://docs.gemini.ai/runbooks/agent-server-down"
+        
+    # High Error Rate
+    - alert: GeminiHighErrorRate
+      expr: |
+        (
+          sum(rate(gemini_agent_requests_total{status=~"error|failed"}[5m])) /
+          sum(rate(gemini_agent_requests_total[5m]))
+        ) * 100 > 5
+      for: 5m
+      labels:
+        severity: critical
+        service: agent-server
+        team: platform
+      annotations:
+        summary: "High error rate detected"
+        description: "Error rate is {{ $value | humanizePercentage }} for agent requests"
+        runbook_url: "https://docs.gemini.ai/runbooks/high-error-rate"
+        
+    # Database Connection Failures
+    - alert: GeminiDatabaseConnectionFailed
+      expr: |
+        rate(gemini_database_connection_failures_total[5m]) > 0
+      for: 1m
+      labels:
+        severity: critical
+        service: database
+        team: platform
+      annotations:
+        summary: "Database connection failures detected"
+        description: "{{ $value }} database connection failures per second"
+        runbook_url: "https://docs.gemini.ai/runbooks/database-connection-failures"
+        
+    # Redis Connection Issues
+    - alert: GeminiRedisConnectionFailed
+      expr: |
+        redis_connected_clients == 0
+      for: 2m
+      labels:
+        severity: critical
+        service: redis
+        team: platform
+      annotations:
+        summary: "Redis connection failed"
+        description: "No Redis clients connected for more than 2 minutes"
+        runbook_url: "https://docs.gemini.ai/runbooks/redis-connection-failed"
+
+  # Performance Alerts
+  - name: gemini.performance
+    interval: 30s
+    rules:
+    
+    # High Response Time
+    - alert: GeminiHighResponseTime
+      expr: |
+        histogram_quantile(0.95,
+          sum(rate(gemini_agent_response_time_seconds_bucket[5m])) by (le, agent_type)
+        ) > 2.0
+      for: 5m
+      labels:
+        severity: warning
+        service: agent-server
+        team: platform
+      annotations:
+        summary: "High response time detected"
+        description: "95th percentile response time is {{ $value }}s for {{ $labels.agent_type }} agent"
+        runbook_url: "https://docs.gemini.ai/runbooks/high-response-time"
+        
+    # Agent Queue Backlog
+    - alert: GeminiAgentQueueBacklog
+      expr: |
+        gemini_agent_queue_size > 100
+      for: 5m
+      labels:
+        severity: warning
+        service: agent-server
+        team: platform
+      annotations:
+        summary: "Agent processing queue backlog"
+        description: "Agent queue has {{ $value }} pending requests"
+        runbook_url: "https://docs.gemini.ai/runbooks/queue-backlog"
+        
+    # Scout Indexing Performance Degradation
+    - alert: GeminiScoutIndexingSlowdown
+      expr: |
+        rate(gemini_scout_files_indexed_total[5m]) * 60 < 10
+      for: 10m
+      labels:
+        severity: warning
+        service: scout
+        team: intelligence
+      annotations:
+        summary: "Scout indexing performance degraded"
+        description: "Scout is indexing only {{ $value }} files per minute"
+        runbook_url: "https://docs.gemini.ai/runbooks/scout-indexing-slow"
+        
+    # Knowledge Base Query Slowdown
+    - alert: GeminiKnowledgeQuerySlowdown
+      expr: |
+        histogram_quantile(0.95,
+          rate(gemini_knowledge_query_duration_seconds_bucket[5m])
+        ) > 5.0
+      for: 5m
+      labels:
+        severity: warning
+        service: knowledge-base
+        team: intelligence
+      annotations:
+        summary: "Knowledge base queries are slow"
+        description: "95th percentile query time is {{ $value }}s"
+        runbook_url: "https://docs.gemini.ai/runbooks/knowledge-query-slow"
+
+  # Resource Alerts
+  - name: gemini.resources
+    interval: 30s
+    rules:
+    
+    # High Memory Usage
+    - alert: GeminiHighMemoryUsage
+      expr: |
+        (
+          container_memory_working_set_bytes{pod=~"gemini-.*"} /
+          container_spec_memory_limit_bytes{pod=~"gemini-.*"}
+        ) * 100 > 85
+      for: 5m
+      labels:
+        severity: warning
+        service: "{{ $labels.pod }}"
+        team: platform
+      annotations:
+        summary: "High memory usage detected"
+        description: "Memory usage is {{ $value | humanizePercentage }} for pod {{ $labels.pod }}"
+        runbook_url: "https://docs.gemini.ai/runbooks/high-memory-usage"
+        
+    # High CPU Usage
+    - alert: GeminiHighCPUUsage
+      expr: |
+        (
+          rate(container_cpu_usage_seconds_total{pod=~"gemini-.*"}[5m]) * 100
+        ) > 80
+      for: 5m
+      labels:
+        severity: warning
+        service: "{{ $labels.pod }}"
+        team: platform
+      annotations:
+        summary: "High CPU usage detected"
+        description: "CPU usage is {{ $value | humanizePercentage }} for pod {{ $labels.pod }}"
+        runbook_url: "https://docs.gemini.ai/runbooks/high-cpu-usage"
+        
+    # Disk Space Low
+    - alert: GeminiLowDiskSpace
+      expr: |
+        (
+          container_fs_usage_bytes{pod=~"gemini-.*"} /
+          container_fs_limit_bytes{pod=~"gemini-.*"}
+        ) * 100 > 85
+      for: 5m
+      labels:
+        severity: warning
+        service: "{{ $labels.pod }}"
+        team: platform
+      annotations:
+        summary: "Low disk space detected"
+        description: "Disk usage is {{ $value | humanizePercentage }} for pod {{ $labels.pod }}"
+        runbook_url: "https://docs.gemini.ai/runbooks/low-disk-space"
+
+  # Agent-Specific Alerts
+  - name: gemini.agents
+    interval: 30s
+    rules:
+    
+    # Agent Response Failure Rate
+    - alert: GeminiAgentHighFailureRate
+      expr: |
+        (
+          sum(rate(gemini_agent_requests_total{status="failed"}[5m])) by (agent_type) /
+          sum(rate(gemini_agent_requests_total[5m])) by (agent_type)
+        ) * 100 > 10
+      for: 5m
+      labels:
+        severity: warning
+        service: "{{ $labels.agent_type }}-agent"
+        team: intelligence
+      annotations:
+        summary: "High failure rate for {{ $labels.agent_type }} agent"
+        description: "{{ $labels.agent_type }} agent failure rate is {{ $value | humanizePercentage }}"
+        runbook_url: "https://docs.gemini.ai/runbooks/agent-high-failure-rate"
+        
+    # Agent Session Timeout
+    - alert: GeminiAgentSessionTimeout
+      expr: |
+        increase(gemini_agent_session_timeouts_total[5m]) > 5
+      for: 2m
+      labels:
+        severity: warning
+        service: agent-server
+        team: platform
+      annotations:
+        summary: "Multiple agent session timeouts"
+        description: "{{ $value }} agent sessions timed out in the last 5 minutes"
+        runbook_url: "https://docs.gemini.ai/runbooks/agent-session-timeouts"
+        
+    # Guardian Validation Failures
+    - alert: GeminiGuardianValidationFailures
+      expr: |
+        rate(gemini_guardian_validation_failures_total[5m]) > 0.1
+      for: 5m
+      labels:
+        severity: warning
+        service: guardian
+        team: security
+      annotations:
+        summary: "Guardian validation failures detected"
+        description: "{{ $value }} validation failures per second"
+        runbook_url: "https://docs.gemini.ai/runbooks/guardian-validation-failures"
+
+  # Business Impact Alerts
+  - name: gemini.business
+    interval: 60s
+    rules:
+    
+    # Scaling Issues Detected
+    - alert: GeminiScalingIssuesDetected
+      expr: |
+        increase(gemini_scaling_issues_detected_total[1h]) > 5
+      for: 0m
+      labels:
+        severity: info
+        service: killer-demo
+        team: optimization
+      annotations:
+        summary: "Multiple scaling issues detected"
+        description: "{{ $value }} scaling issues detected in the last hour by Killer Demo"
+        runbook_url: "https://docs.gemini.ai/runbooks/scaling-issues-detected"
+        
+    # Critical Scaling Issues
+    - alert: GeminiCriticalScalingIssues
+      expr: |
+        increase(gemini_scaling_issues_detected_total{severity="critical"}[30m]) > 0
+      for: 0m
+      labels:
+        severity: warning
+        service: killer-demo
+        team: optimization
+      annotations:
+        summary: "Critical scaling issues detected"
+        description: "{{ $value }} critical scaling issues found in the last 30 minutes"
+        runbook_url: "https://docs.gemini.ai/runbooks/critical-scaling-issues"
+        
+    # High Cost Anomaly
+    - alert: GeminiHighCostAnomaly
+      expr: |
+        increase(gemini_infrastructure_cost_usd_total[1h]) > 
+        increase(gemini_infrastructure_cost_usd_total[1h] offset 24h) * 1.5
+      for: 30m
+      labels:
+        severity: warning
+        service: cost-monitoring
+        team: finance
+      annotations:
+        summary: "High cost anomaly detected"
+        description: "Infrastructure costs are 50% higher than the same time yesterday"
+        runbook_url: "https://docs.gemini.ai/runbooks/high-cost-anomaly"
+        
+    # Scout Duplicate Detection Accuracy Drop
+    - alert: GeminiScoutAccuracyDrop
+      expr: |
+        gemini_scout_duplicate_detection_accuracy_percent < 85
+      for: 10m
+      labels:
+        severity: warning
+        service: scout
+        team: intelligence
+      annotations:
+        summary: "Scout duplicate detection accuracy dropped"
+        description: "Detection accuracy is {{ $value }}%, below threshold of 85%"
+        runbook_url: "https://docs.gemini.ai/runbooks/scout-accuracy-drop"
+
+  # Security Alerts
+  - name: gemini.security
+    interval: 30s
+    rules:
+    
+    # Unusual API Access Pattern
+    - alert: GeminiUnusualAPIAccess
+      expr: |
+        rate(gemini_api_requests_total[5m]) > 
+        rate(gemini_api_requests_total[5m] offset 1h) * 3
+      for: 5m
+      labels:
+        severity: warning
+        service: api-gateway
+        team: security
+      annotations:
+        summary: "Unusual API access pattern detected"
+        description: "API request rate is 3x higher than usual"
+        runbook_url: "https://docs.gemini.ai/runbooks/unusual-api-access"
+        
+    # Failed Authentication Attempts
+    - alert: GeminiFailedAuthAttempts
+      expr: |
+        rate(gemini_auth_failures_total[5m]) > 1
+      for: 2m
+      labels:
+        severity: warning
+        service: authentication
+        team: security
+      annotations:
+        summary: "Multiple failed authentication attempts"
+        description: "{{ $value }} failed auth attempts per second"
+        runbook_url: "https://docs.gemini.ai/runbooks/failed-auth-attempts"
+
+  # Infrastructure Alerts
+  - name: gemini.infrastructure
+    interval: 30s
+    rules:
+    
+    # Pod Restart Loop
+    - alert: GeminiPodRestartLoop
+      expr: |
+        increase(kube_pod_container_status_restarts_total{pod=~"gemini-.*"}[15m]) > 3
+      for: 0m
+      labels:
+        severity: critical
+        service: kubernetes
+        team: platform
+      annotations:
+        summary: "Pod restart loop detected"
+        description: "Pod {{ $labels.pod }} has restarted {{ $value }} times in 15 minutes"
+        runbook_url: "https://docs.gemini.ai/runbooks/pod-restart-loop"
+        
+    # Load Balancer Health Check Failures
+    - alert: GeminiLoadBalancerHealthFailed
+      expr: |
+        nginx_upstream_server_status{status!="up"} == 1
+      for: 2m
+      labels:
+        severity: warning
+        service: load-balancer
+        team: platform
+      annotations:
+        summary: "Load balancer health check failed"
+        description: "Server {{ $labels.server }} in upstream {{ $labels.upstream }} is {{ $labels.status }}"
+        runbook_url: "https://docs.gemini.ai/runbooks/lb-health-check-failed"
+        
+    # Certificate Expiration Warning
+    - alert: GeminiCertificateExpiring
+      expr: |
+        (cert_expiry_timestamp - time()) / 86400 < 30
+      for: 0m
+      labels:
+        severity: warning
+        service: certificates
+        team: platform
+      annotations:
+        summary: "TLS certificate expiring soon"
+        description: "Certificate {{ $labels.cn }} expires in {{ $value }} days"
+        runbook_url: "https://docs.gemini.ai/runbooks/certificate-expiring"

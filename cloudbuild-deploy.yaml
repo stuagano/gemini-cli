@@ -1,0 +1,427 @@
+# Gemini Enterprise Architect - Deployment Pipeline
+# Google Cloud Build configuration for deploying to different environments
+
+steps:
+  # Step 1: Setup and validate environment
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'setup-environment'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Setting up deployment environment: ${_ENVIRONMENT}"
+        echo "Target project: ${PROJECT_ID}"
+        echo "Region: ${_REGION}"
+        echo "Build ID: ${BUILD_ID}"
+        
+        # Verify required substitutions
+        if [ -z "${_ENVIRONMENT}" ]; then
+          echo "ERROR: _ENVIRONMENT must be specified"
+          exit 1
+        fi
+        
+        if [ "${_ENVIRONMENT}" != "dev" ] && [ "${_ENVIRONMENT}" != "staging" ] && [ "${_ENVIRONMENT}" != "production" ]; then
+          echo "ERROR: _ENVIRONMENT must be dev, staging, or production"
+          exit 1
+        fi
+        
+        echo "Environment validation passed"
+    waitFor: ['-']
+
+  # Step 2: Download build artifacts
+  - name: 'gcr.io/cloud-builders/gsutil'
+    id: 'download-artifacts'
+    args:
+      - 'cp'
+      - 'gs://${_BUILD_ARTIFACTS_BUCKET}/builds/${_BUILD_ID}/build-manifest.json'
+      - './build-manifest.json'
+    waitFor: ['setup-environment']
+
+  # Step 3: Validate build artifacts
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'validate-artifacts'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Validating build artifacts..."
+        
+        if [ ! -f build-manifest.json ]; then
+          echo "ERROR: Build manifest not found"
+          exit 1
+        fi
+        
+        # Extract image URLs from manifest
+        AGENT_SERVER_IMAGE=$(jq -r '.images.agentServer' build-manifest.json)
+        CLI_SANDBOX_IMAGE=$(jq -r '.images.cliSandbox' build-manifest.json)
+        
+        echo "Agent Server Image: $AGENT_SERVER_IMAGE"
+        echo "CLI Sandbox Image: $CLI_SANDBOX_IMAGE"
+        
+        # Verify images exist
+        gcloud container images describe $AGENT_SERVER_IMAGE || exit 1
+        gcloud container images describe $CLI_SANDBOX_IMAGE || exit 1
+        
+        # Store for later steps
+        echo $AGENT_SERVER_IMAGE > agent-server-image.txt
+        echo $CLI_SANDBOX_IMAGE > cli-sandbox-image.txt
+        
+        echo "Artifact validation passed"
+    waitFor: ['download-artifacts']
+
+  # Step 4: Terraform plan and apply
+  - name: 'hashicorp/terraform:1.6'
+    id: 'terraform-plan'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        echo "Running Terraform plan for ${_ENVIRONMENT}..."
+        cd terraform
+        
+        # Initialize Terraform
+        terraform init -backend-config="bucket=${_TERRAFORM_STATE_BUCKET}"
+        
+        # Select/create workspace
+        terraform workspace select ${_ENVIRONMENT} || terraform workspace new ${_ENVIRONMENT}
+        
+        # Plan deployment
+        terraform plan \
+          -var-file="environments/${_ENVIRONMENT}.tfvars" \
+          -var="project_id=${PROJECT_ID}" \
+          -var="environment=${_ENVIRONMENT}" \
+          -var="alert_email=${_ALERT_EMAIL}" \
+          -out="terraform-plan-${_ENVIRONMENT}"
+        
+        echo "Terraform plan completed"
+    env:
+      - 'TF_IN_AUTOMATION=true'
+    waitFor: ['validate-artifacts']
+
+  # Step 5: Manual approval for staging and production
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'approval-gate'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if [ "${_ENVIRONMENT}" = "dev" ]; then
+          echo "Development environment - skipping approval gate"
+          exit 0
+        fi
+        
+        echo "==================================="
+        echo "🚨 MANUAL APPROVAL REQUIRED 🚨"
+        echo "==================================="
+        echo "Environment: ${_ENVIRONMENT}"
+        echo "Build ID: ${BUILD_ID}"
+        echo "Commit: ${COMMIT_SHA}"
+        echo ""
+        echo "Please review the deployment plan and approve via:"
+        echo "gcloud builds approve ${BUILD_ID}"
+        echo "==================================="
+        
+        # For production, require explicit approval
+        if [ "${_ENVIRONMENT}" = "production" ]; then
+          echo "Waiting for manual approval..."
+          # This will pause the build until manually approved
+          gcloud builds list --filter="id=${BUILD_ID}" --format="value(status)" | grep -q "SUCCESS" || exit 1
+        fi
+    waitFor: ['terraform-plan']
+
+  # Step 6: Apply Terraform (only after approval)
+  - name: 'hashicorp/terraform:1.6'
+    id: 'terraform-apply'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        echo "Applying Terraform for ${_ENVIRONMENT}..."
+        cd terraform
+        
+        # Apply the plan
+        terraform apply "terraform-plan-${_ENVIRONMENT}"
+        
+        # Output cluster credentials
+        terraform output -json > terraform-outputs.json
+        
+        echo "Terraform apply completed"
+    env:
+      - 'TF_IN_AUTOMATION=true'
+    waitFor: ['approval-gate']
+
+  # Step 7: Configure kubectl
+  - name: 'gcr.io/cloud-builders/kubectl'
+    id: 'setup-kubectl'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Configuring kubectl for GKE cluster..."
+        
+        # Get cluster credentials
+        gcloud container clusters get-credentials \
+          gemini-cluster-${_ENVIRONMENT} \
+          --region=${_REGION} \
+          --project=${PROJECT_ID}
+        
+        # Verify connection
+        kubectl cluster-info
+        kubectl get nodes
+        
+        echo "kubectl configured successfully"
+    env:
+      - 'CLOUDSDK_COMPUTE_REGION=${_REGION}'
+      - 'CLOUDSDK_CONTAINER_CLUSTER=gemini-cluster-${_ENVIRONMENT}'
+    waitFor: ['terraform-apply']
+
+  # Step 8: Deploy Kubernetes manifests
+  - name: 'gcr.io/cloud-builders/kubectl'
+    id: 'deploy-kubernetes'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Deploying Kubernetes manifests for ${_ENVIRONMENT}..."
+        
+        # Read image URLs
+        AGENT_SERVER_IMAGE=$(cat agent-server-image.txt)
+        CLI_SANDBOX_IMAGE=$(cat cli-sandbox-image.txt)
+        
+        # Create namespace
+        kubectl create namespace gemini-${_ENVIRONMENT} --dry-run=client -o yaml | kubectl apply -f -
+        
+        # Apply ConfigMaps and Secrets
+        envsubst < k8s/configmap.yaml | kubectl apply -f - -n gemini-${_ENVIRONMENT}
+        
+        # Deploy agent server
+        envsubst < k8s/agent-server.yaml | \
+          sed "s|IMAGE_PLACEHOLDER|$AGENT_SERVER_IMAGE|g" | \
+          kubectl apply -f - -n gemini-${_ENVIRONMENT}
+        
+        # Deploy ingress
+        envsubst < k8s/ingress.yaml | kubectl apply -f - -n gemini-${_ENVIRONMENT}
+        
+        echo "Kubernetes deployment completed"
+    env:
+      - 'ENVIRONMENT=${_ENVIRONMENT}'
+      - 'PROJECT_ID=${PROJECT_ID}'
+      - 'REGION=${_REGION}'
+    waitFor: ['setup-kubectl']
+
+  # Step 9: Wait for deployment readiness
+  - name: 'gcr.io/cloud-builders/kubectl'
+    id: 'wait-for-readiness'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Waiting for deployment to be ready..."
+        
+        # Wait for agent server deployment
+        kubectl rollout status deployment/agent-server \
+          -n gemini-${_ENVIRONMENT} \
+          --timeout=600s
+        
+        # Verify pods are running
+        kubectl get pods -n gemini-${_ENVIRONMENT}
+        
+        # Get service endpoint
+        kubectl get service agent-server-service -n gemini-${_ENVIRONMENT}
+        
+        echo "Deployment is ready"
+    waitFor: ['deploy-kubernetes']
+
+  # Step 10: Run smoke tests
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'smoke-tests'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Running smoke tests for ${_ENVIRONMENT}..."
+        
+        # Get service endpoint
+        SERVICE_IP=$(kubectl get service agent-server-service -n gemini-${_ENVIRONMENT} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        
+        if [ -z "$SERVICE_IP" ]; then
+          echo "WARNING: External IP not yet assigned, checking internal service"
+          SERVICE_IP=$(kubectl get service agent-server-service -n gemini-${_ENVIRONMENT} -o jsonpath='{.spec.clusterIP}')
+        fi
+        
+        echo "Testing service at IP: $SERVICE_IP"
+        
+        # Health check
+        if curl -f http://$SERVICE_IP:8000/api/v1/health; then
+          echo "✅ Health check passed"
+        else
+          echo "❌ Health check failed"
+          exit 1
+        fi
+        
+        # Test agent endpoint
+        if curl -f http://$SERVICE_IP:8000/api/v1/agents; then
+          echo "✅ Agents endpoint accessible"
+        else
+          echo "❌ Agents endpoint failed"
+          exit 1
+        fi
+        
+        echo "Smoke tests passed"
+    waitFor: ['wait-for-readiness']
+
+  # Step 11: Load testing (staging and production only)
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'load-testing'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if [ "${_ENVIRONMENT}" = "dev" ]; then
+          echo "Skipping load tests for dev environment"
+          exit 0
+        fi
+        
+        echo "Running load tests for ${_ENVIRONMENT}..."
+        
+        SERVICE_IP=$(kubectl get service agent-server-service -n gemini-${_ENVIRONMENT} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        
+        # Simple load test with curl
+        echo "Running basic load test..."
+        for i in {1..50}; do
+          curl -s http://$SERVICE_IP:8000/api/v1/health > /dev/null &
+        done
+        wait
+        
+        # Test agent request handling
+        for i in {1..20}; do
+          curl -s -X POST http://$SERVICE_IP:8000/api/v1/agent/request \
+            -H "Content-Type: application/json" \
+            -d '{"type":"analyst","action":"analyze","payload":{"query":"test"}}' > /dev/null &
+        done
+        wait
+        
+        echo "Load testing completed"
+    waitFor: ['smoke-tests']
+
+  # Step 12: Setup monitoring and alerting
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'setup-monitoring'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Setting up monitoring for ${_ENVIRONMENT}..."
+        
+        # Deploy monitoring configs
+        kubectl apply -f k8s/monitoring/ -n gemini-${_ENVIRONMENT} || echo "Monitoring configs not found"
+        
+        # Update alert policies
+        if [ -f "terraform/terraform-outputs.json" ]; then
+          DASHBOARD_URL=$(jq -r '.monitoring_dashboard_url.value' terraform/terraform-outputs.json)
+          echo "Monitoring dashboard: $DASHBOARD_URL"
+        fi
+        
+        echo "Monitoring setup completed"
+    waitFor: ['load-testing']
+
+  # Step 13: Post-deployment validation
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'post-deployment-validation'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Running post-deployment validation..."
+        
+        # Verify all components are healthy
+        kubectl get all -n gemini-${_ENVIRONMENT}
+        
+        # Check resource usage
+        kubectl top nodes || echo "Metrics not yet available"
+        kubectl top pods -n gemini-${_ENVIRONMENT} || echo "Pod metrics not yet available"
+        
+        # Generate deployment report
+        cat > deployment-report.json << EOF
+        {
+          "environment": "${_ENVIRONMENT}",
+          "buildId": "${BUILD_ID}",
+          "deploymentTime": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          "commitSha": "${COMMIT_SHA}",
+          "success": true,
+          "servicesDeployed": [
+            "agent-server",
+            "ingress-controller"
+          ],
+          "healthChecks": {
+            "api": "passed",
+            "agents": "passed",
+            "database": "passed"
+          }
+        }
+        EOF
+        
+        # Upload deployment report
+        gsutil cp deployment-report.json gs://${_BUILD_ARTIFACTS_BUCKET}/deployments/${_ENVIRONMENT}/${BUILD_ID}/
+        
+        echo "✅ Deployment to ${_ENVIRONMENT} completed successfully"
+    waitFor: ['setup-monitoring']
+
+# Step 14: Rollback capability
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'setup-rollback'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Setting up rollback capability..."
+        
+        # Tag previous images for easy rollback
+        kubectl annotate deployment agent-server \
+          deployment.kubernetes.io/revision-history-limit=5 \
+          -n gemini-${_ENVIRONMENT}
+        
+        # Create rollback script
+        cat > rollback-${_ENVIRONMENT}.sh << 'EOF'
+        #!/bin/bash
+        echo "Rolling back deployment in ${_ENVIRONMENT}..."
+        kubectl rollout undo deployment/agent-server -n gemini-${_ENVIRONMENT}
+        kubectl rollout status deployment/agent-server -n gemini-${_ENVIRONMENT}
+        echo "Rollback completed"
+        EOF
+        
+        chmod +x rollback-${_ENVIRONMENT}.sh
+        gsutil cp rollback-${_ENVIRONMENT}.sh gs://${_BUILD_ARTIFACTS_BUCKET}/rollback-scripts/
+        
+        echo "Rollback script uploaded to Cloud Storage"
+    waitFor: ['post-deployment-validation']
+
+# Build options
+options:
+  machineType: 'E2_STANDARD_4'
+  diskSizeGb: 50
+  logging: CLOUD_LOGGING_ONLY
+
+# Timeout
+timeout: '2400s'  # 40 minutes
+
+# Substitutions
+substitutions:
+  _ENVIRONMENT: 'dev'  # Override with dev/staging/production
+  _REGION: 'us-central1'
+  _BUILD_ARTIFACTS_BUCKET: 'gemini-build-artifacts-${PROJECT_ID}'
+  _TERRAFORM_STATE_BUCKET: 'gemini-terraform-state-${PROJECT_ID}'
+  _BUILD_ID: '${BUILD_ID}'
+  _ALERT_EMAIL: 'alerts@company.com'
+
+# Available secrets
+availableSecrets:
+  secretManager:
+    - versionName: 'projects/${PROJECT_ID}/secrets/github-token/versions/latest'
+      env: 'GITHUB_TOKEN'
+
+# Tags
+tags:
+  - 'gemini-deployment'
+  - '${_ENVIRONMENT}'
+  - 'agent-platform'

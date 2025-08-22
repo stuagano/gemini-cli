@@ -1,0 +1,258 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Gemini Agent Performance",
+    "tags": ["gemini", "agents", "performance"],
+    "style": "dark",
+    "timezone": "browser",
+    "refresh": "30s",
+    "schemaVersion": 30,
+    "version": 1,
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Agent Request Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(rate(gemini_agent_requests_total[5m]))",
+            "legendFormat": "Requests/sec",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 10},
+                {"color": "red", "value": 50}
+              ]
+            },
+            "unit": "reqps"
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Agent Response Time (95th percentile)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(gemini_agent_response_time_seconds_bucket[5m])) by (le))",
+            "legendFormat": "95th percentile",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 0.5},
+                {"color": "red", "value": 2.0}
+              ]
+            },
+            "unit": "s"
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Agent Error Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(rate(gemini_agent_requests_total{status=~\"error|failed\"}[5m])) / sum(rate(gemini_agent_requests_total[5m])) * 100",
+            "legendFormat": "Error Rate %",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 1},
+                {"color": "red", "value": 5}
+              ]
+            },
+            "unit": "percent"
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "Active Agent Sessions",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(gemini_agent_active_sessions)",
+            "legendFormat": "Active Sessions",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 100},
+                {"color": "red", "value": 500}
+              ]
+            },
+            "unit": "short"
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0}
+      },
+      {
+        "id": 5,
+        "title": "Agent Request Volume by Type",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "sum(rate(gemini_agent_requests_total[5m])) by (agent_type)",
+            "legendFormat": "{{agent_type}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "pointSize": 5,
+              "fillOpacity": 10
+            },
+            "unit": "reqps"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 6,
+        "title": "Agent Response Time Distribution",
+        "type": "heatmap",
+        "targets": [
+          {
+            "expr": "sum(rate(gemini_agent_response_time_seconds_bucket[5m])) by (le, agent_type)",
+            "legendFormat": "{{agent_type}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 7,
+        "title": "Scout Indexing Performance",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(gemini_scout_files_indexed_total[5m])",
+            "legendFormat": "Files Indexed/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "gemini_scout_duplicate_detection_rate",
+            "legendFormat": "Duplicate Detection Rate",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      },
+      {
+        "id": 8,
+        "title": "Agent Error Breakdown",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum(rate(gemini_agent_requests_total{status=~\"error|failed\"}[5m])) by (error_type)",
+            "legendFormat": "{{error_type}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      },
+      {
+        "id": 9,
+        "title": "Guardian Validation Pipeline",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(gemini_guardian_validations_total[5m])",
+            "legendFormat": "Validations/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(gemini_guardian_validation_failures_total[5m])",
+            "legendFormat": "Validation Failures/sec",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
+      },
+      {
+        "id": 10,
+        "title": "Knowledge Base Query Performance",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(gemini_knowledge_queries_total[5m])",
+            "legendFormat": "Queries/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(gemini_knowledge_query_duration_seconds_bucket[5m]))",
+            "legendFormat": "Query Duration (95th percentile)",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}
+      }
+    ]
+  }
+}

@@ -1,0 +1,244 @@
+# Log Aggregation and Alert Rules for Loki
+# These rules define log-based metrics and alerts for operational insights
+
+groups:
+  # Error Rate Monitoring
+  - name: gemini.log_errors
+    interval: 30s
+    rules:
+    
+    # High Error Rate from Logs
+    - record: gemini:log_error_rate
+      expr: |
+        sum(rate({job=~"gemini-.*", level="ERROR"}[5m])) by (service)
+    
+    # Agent Request Error Rate
+    - record: gemini:agent_error_rate
+      expr: |
+        sum(rate({job="agent-server", level="ERROR", error_type!=""}[5m])) by (agent_type, error_type)
+    
+    # Scout Indexing Error Rate
+    - record: gemini:scout_error_rate
+      expr: |
+        sum(rate({job="scout-indexer", level="ERROR", error_type="indexing_failure"}[5m]))
+    
+    # Guardian Validation Error Rate
+    - record: gemini:guardian_validation_error_rate
+      expr: |
+        sum(rate({job="guardian", level="ERROR", validation_type!=""}[5m])) by (validation_type)
+
+  # Performance Monitoring from Logs
+  - name: gemini.log_performance
+    interval: 30s
+    rules:
+    
+    # Agent Response Time from Logs
+    - record: gemini:agent_response_time_p95
+      expr: |
+        histogram_quantile(0.95,
+          sum(rate({job="agent-server", duration_ms!=""}[5m])) by (le, agent_type)
+        )
+    
+    # Scout Processing Time
+    - record: gemini:scout_processing_time_p95
+      expr: |
+        histogram_quantile(0.95,
+          sum(rate({job="scout-indexer", processing_time_ms!=""}[5m])) by (le)
+        )
+    
+    # Guardian Validation Time
+    - record: gemini:guardian_validation_time_p95
+      expr: |
+        histogram_quantile(0.95,
+          sum(rate({job="guardian", validation_time_ms!=""}[5m])) by (le, validation_type)
+        )
+
+  # Business Logic Monitoring
+  - name: gemini.log_business
+    interval: 30s
+    rules:
+    
+    # Scaling Issues Detection Rate
+    - record: gemini:scaling_issues_detected_rate
+      expr: |
+        sum(rate({job="killer-demo", scaling_issue="true"}[5m])) by (issue_type, severity)
+    
+    # Duplicate Detection Rate
+    - record: gemini:duplicate_detection_rate
+      expr: |
+        sum(rate({job="scout-indexer", duplicate_detection="true"}[5m]))
+    
+    # Validation Violations Rate
+    - record: gemini:validation_violations_rate
+      expr: |
+        sum(rate({job="guardian", violation="true"}[5m])) by (rule_name, severity)
+    
+    # Optimization Recommendations Rate
+    - record: gemini:optimization_recommendations_rate
+      expr: |
+        sum(rate({job="killer-demo", optimization_recommendation="true"}[5m])) by (recommendation_type)
+
+  # Security Monitoring
+  - name: gemini.log_security
+    interval: 30s
+    rules:
+    
+    # Authentication Failures
+    - record: gemini:auth_failure_rate
+      expr: |
+        sum(rate({job=~"gemini-.*", message=~".*authentication.*failed.*"}[5m])) by (service)
+    
+    # Suspicious Activity
+    - record: gemini:suspicious_activity_rate
+      expr: |
+        sum(rate({job=~"gemini-.*", level="WARNING", message=~".*suspicious.*|.*unusual.*|.*anomaly.*"}[5m])) by (service)
+
+  # Alert Rules Based on Logs
+  - name: gemini.log_alerts
+    interval: 30s
+    rules:
+    
+    # High Log Error Rate Alert
+    - alert: GeminiHighLogErrorRate
+      expr: |
+        sum(rate({job=~"gemini-.*", level="ERROR"}[5m])) by (service) > 0.1
+      for: 5m
+      labels:
+        severity: warning
+        team: platform
+      annotations:
+        summary: "High error rate detected in logs"
+        description: "Service {{ $labels.service }} has {{ $value }} errors per second"
+        
+    # Agent Processing Failures
+    - alert: GeminiAgentProcessingFailures
+      expr: |
+        sum(rate({job="agent-server", level="ERROR", error_type!=""}[5m])) by (agent_type) > 0.05
+      for: 5m
+      labels:
+        severity: warning
+        team: intelligence
+      annotations:
+        summary: "Agent processing failures detected"
+        description: "{{ $labels.agent_type }} agent has {{ $value }} failures per second"
+        
+    # Scout Indexing Failures
+    - alert: GeminiScoutIndexingFailures
+      expr: |
+        sum(rate({job="scout-indexer", level="ERROR", error_type="indexing_failure"}[5m])) > 0.02
+      for: 5m
+      labels:
+        severity: warning
+        team: intelligence
+      annotations:
+        summary: "Scout indexing failures detected"
+        description: "Scout has {{ $value }} indexing failures per second"
+        
+    # Guardian Validation System Issues
+    - alert: GeminiGuardianValidationIssues
+      expr: |
+        sum(rate({job="guardian", level="ERROR"}[5m])) > 0.02
+      for: 5m
+      labels:
+        severity: warning
+        team: security
+      annotations:
+        summary: "Guardian validation system issues"
+        description: "Guardian has {{ $value }} errors per second"
+        
+    # Killer Demo Critical Scaling Issues
+    - alert: GeminiCriticalScalingIssuesInLogs
+      expr: |
+        sum(rate({job="killer-demo", scaling_issue="true", severity="critical"}[5m])) > 0
+      for: 0m
+      labels:
+        severity: critical
+        team: optimization
+      annotations:
+        summary: "Critical scaling issues detected in logs"
+        description: "{{ $value }} critical scaling issues detected per second"
+        
+    # Unusual Error Patterns
+    - alert: GeminiUnusualErrorPatterns
+      expr: |
+        (
+          sum(rate({job=~"gemini-.*", level="ERROR"}[5m])) by (service) /
+          sum(rate({job=~"gemini-.*", level="ERROR"}[5m] offset 1h)) by (service)
+        ) > 3
+      for: 5m
+      labels:
+        severity: warning
+        team: platform
+      annotations:
+        summary: "Unusual error pattern detected"
+        description: "Service {{ $labels.service }} error rate is 3x higher than usual"
+        
+    # Memory Issues from Stack Traces
+    - alert: GeminiMemoryIssuesInLogs
+      expr: |
+        sum(rate({job=~"gemini-.*", level="ERROR", message=~".*OutOfMemoryError.*|.*MemoryError.*"}[5m])) > 0
+      for: 1m
+      labels:
+        severity: critical
+        team: platform
+      annotations:
+        summary: "Memory issues detected in application logs"
+        description: "OutOfMemory errors detected in application logs"
+        
+    # Database Connection Issues
+    - alert: GeminiDatabaseIssuesInLogs
+      expr: |
+        sum(rate({job=~"gemini-.*", level="ERROR", message=~".*database.*connection.*|.*PostgreSQL.*|.*redis.*connection.*"}[5m])) > 0
+      for: 2m
+      labels:
+        severity: critical
+        team: platform
+      annotations:
+        summary: "Database connection issues detected in logs"
+        description: "Database connection errors found in application logs"
+        
+    # Security Incidents from Logs
+    - alert: GeminiSecurityIncidentsInLogs
+      expr: |
+        sum(rate({job=~"gemini-.*", level=~"ERROR|WARNING", message=~".*unauthorized.*|.*forbidden.*|.*security.*|.*breach.*"}[5m])) > 0
+      for: 1m
+      labels:
+        severity: critical
+        team: security
+      annotations:
+        summary: "Security incidents detected in logs"
+        description: "Security-related errors or warnings found in application logs"
+
+  # Log Volume Monitoring
+  - name: gemini.log_volume
+    interval: 30s
+    rules:
+    
+    # Total Log Volume
+    - record: gemini:total_log_volume
+      expr: |
+        sum(rate({job=~"gemini-.*"}[5m])) by (service, level)
+    
+    # Verbose Logging Detection
+    - alert: GeminiVerboseLogging
+      expr: |
+        sum(rate({job=~"gemini-.*", level="DEBUG"}[5m])) by (service) > 10
+      for: 10m
+      labels:
+        severity: info
+        team: platform
+      annotations:
+        summary: "Verbose logging detected"
+        description: "Service {{ $labels.service }} is producing {{ $value }} debug logs per second"
+        
+    # Log Storage Impact
+    - alert: GeminiHighLogVolume
+      expr: |
+        sum(rate({job=~"gemini-.*"}[5m])) > 100
+      for: 10m
+      labels:
+        severity: warning
+        team: platform
+      annotations:
+        summary: "High log volume detected"
+        description: "Total log volume is {{ $value }} logs per second, may impact storage"

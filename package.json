@@ -25,8 +25,7 @@
     "generate": "node scripts/generate-git-commit-info.js",
     "build": "node scripts/build.js",
     "build-and-start": "npm run build && npm run start",
-    "build:vscode": "node scripts/build_vscode_companion.js",
-    "build:all": "npm run build && npm run build:sandbox && npm run build:vscode",
+    "build:all": "npm run build && npm run build:sandbox",
     "build:packages": "npm run build --workspaces",
     "build:sandbox": "node scripts/build_sandbox.js --skip-npm-install-build",
     "bundle": "npm run generate && node esbuild.config.js && node scripts/copy_bundle_assets.js",
@@ -91,6 +90,8 @@
     "yargs": "^17.7.2"
   },
   "dependencies": {
+    "@types/cheerio": "^0.22.35",
+    "cheerio": "^1.1.2",
     "node-fetch": "^3.3.2"
   }
 }

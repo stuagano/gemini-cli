@@ -112,10 +112,10 @@ describe('loadExtensions', () => {
 });
 
 describe('annotateActiveExtensions', () => {
-  const extensions = [
-    { config: { name: 'ext1', version: '1.0.0' }, contextFiles: [] },
-    { config: { name: 'ext2', version: '1.0.0' }, contextFiles: [] },
-    { config: { name: 'ext3', version: '1.0.0' }, contextFiles: [] },
+  const extensions: Extension[] = [
+    { path: '/mock/ext1', config: { name: 'ext1', version: '1.0.0' }, contextFiles: [] },
+    { path: '/mock/ext2', config: { name: 'ext2', version: '1.0.0' }, contextFiles: [] },
+    { path: '/mock/ext3', config: { name: 'ext3', version: '1.0.0' }, contextFiles: [] },
   ];
 
   it('should mark all extensions as active if no enabled extensions are provided', () => {

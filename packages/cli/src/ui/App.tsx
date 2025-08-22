@@ -97,6 +97,7 @@ import { ShowMoreLines } from './components/ShowMoreLines.js';
 import { PrivacyNotice } from './privacy/PrivacyNotice.js';
 import { useSettingsCommand } from './hooks/useSettingsCommand.js';
 import { SettingsDialog } from './components/SettingsDialog.js';
+// import { KnowledgeBaseManager } from './components/knowledge/KnowledgeBaseManager.js';
 import { setUpdateHandler } from '../utils/handleAutoUpdate.js';
 import { appEvents, AppEvent } from '../utils/events.js';
 import { isNarrowWidth } from './utils/isNarrowWidth.js';
@@ -205,6 +206,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     IdeContext | undefined
   >();
   const [showEscapePrompt, setShowEscapePrompt] = useState(false);
+  const [showKnowledgeBase] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
   useEffect(() => {
@@ -501,6 +503,19 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     openAuthDialog();
   }, [openAuthDialog, setAuthError]);
 
+  const reloadCommands = useCallback(() => {
+    // Placeholder for reloading commands functionality
+  }, []);
+
+  const setProcessingWrapper = useCallback((isProcessing: boolean) => {
+    setIsProcessing(isProcessing);
+  }, []);
+
+  const setGeminiMdFileCountWrapper = useCallback((show: boolean) => {
+    // Convert boolean to number - this is a temporary workaround
+    setGeminiMdFileCount(show ? 1 : 0);
+  }, []);
+
   // Core hooks and processors
   const {
     vimEnabled: vimModeEnabled,
@@ -531,8 +546,9 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     openPrivacyNotice,
     openSettingsDialog,
     toggleVimEnabled,
-    setIsProcessing,
-    setGeminiMdFileCount,
+    setProcessingWrapper,
+    setGeminiMdFileCountWrapper,
+    reloadCommands,
   );
 
   const buffer = useTextBuffer({
@@ -1064,6 +1080,8 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
               onExit={() => setShowPrivacyNotice(false)}
               config={config}
             />
+          ) : showKnowledgeBase ? (
+            <></>
           ) : (
             <>
               <LoadingIndicator

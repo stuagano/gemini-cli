@@ -151,6 +151,23 @@ export async function main() {
   }
 
   const argv = await parseArguments();
+  
+  // Show epic warning if dangerous mode is enabled
+  if (argv['dangerouslySkipPermissions']) {
+    console.log('\n' + '='.repeat(70));
+    console.log('⚡⚠️  DANGER ZONE ACTIVATED ⚠️⚡');
+    console.log('='.repeat(70));
+    console.log('');
+    console.log('🚀 YOLO MODE: ENGAGED');
+    console.log('🔥 ALL PERMISSIONS: AUTO-APPROVED');
+    console.log('💀 SAFETY RAILS: DISABLED');
+    console.log('');
+    console.log('You are now living dangerously. The AI will execute ALL actions');
+    console.log('without asking for permission. Hope you know what you\'re doing!');
+    console.log('');
+    console.log('='.repeat(70) + '\n');
+  }
+  
   const extensions = loadExtensions(workspaceRoot);
   const config = await loadCliConfig(
     settings.merged,

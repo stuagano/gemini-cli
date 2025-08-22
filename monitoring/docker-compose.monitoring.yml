@@ -1,0 +1,302 @@
+version: '3.8'
+
+services:
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: gemini-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./alerting/prometheus-alerts.yml:/etc/prometheus/alert_rules.yml
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=90d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    networks:
+      - monitoring
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.gemini.local`)"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: gemini-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=gemini_admin_2024
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-worldmap-panel,grafana-clock-panel
+      - GF_FEATURE_TOGGLES_ENABLE=publicDashboards
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    networks:
+      - monitoring
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.gemini.local`)"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+  # Alertmanager for alert handling
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: gemini-alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alerting/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - ./alerting/alert-templates.tmpl:/etc/alertmanager/templates/alert-templates.tmpl
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://alertmanager.gemini.local'
+      - '--cluster.advertise-address=0.0.0.0:9093'
+    environment:
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - PAGERDUTY_INTEGRATION_KEY_CRITICAL=${PAGERDUTY_INTEGRATION_KEY_CRITICAL}
+      - PAGERDUTY_INTEGRATION_KEY_WEEKEND=${PAGERDUTY_INTEGRATION_KEY_WEEKEND}
+    depends_on:
+      - prometheus
+    networks:
+      - monitoring
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.alertmanager.rule=Host(`alertmanager.gemini.local`)"
+
+  # Loki for log aggregation
+  loki:
+    image: grafana/loki:2.9.2
+    container_name: gemini-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./logging/loki-config.yml:/etc/loki/local-config.yaml
+      - ./logging/log-aggregation-rules.yml:/etc/loki/rules/rules.yml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - monitoring
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.loki.rule=Host(`loki.gemini.local`)"
+
+  # Promtail for log collection
+  promtail:
+    image: grafana/promtail:2.9.2
+    container_name: gemini-promtail
+    volumes:
+      - ./logging/promtail-config.yml:/etc/promtail/config.yml
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - monitoring
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:1.51
+    container_name: gemini-jaeger
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # HTTP collector
+      - "14250:14250"  # gRPC collector
+      - "6831:6831/udp"  # UDP compact
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+    networks:
+      - monitoring
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jaeger.rule=Host(`jaeger.gemini.local`)"
+      - "traefik.http.services.jaeger.loadbalancer.server.port=16686"
+
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.89.0
+    container_name: gemini-otel-collector
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "8889:8889"   # Prometheus metrics
+      - "13133:13133" # Health check
+      - "1777:1777"   # pprof
+      - "55679:55679" # zpages
+    volumes:
+      - ./telemetry/otel-config.yml:/etc/otel-collector-config.yml
+    command: ["--config=/etc/otel-collector-config.yml"]
+    depends_on:
+      - prometheus
+      - jaeger
+      - loki
+    networks:
+      - monitoring
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - HONEYCOMB_API_KEY=${HONEYCOMB_API_KEY}
+
+  # Node Exporter for system metrics
+  node-exporter:
+    image: prom/node-exporter:v1.6.1
+    container_name: gemini-node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Redis Exporter
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.55.0
+    container_name: gemini-redis-exporter
+    ports:
+      - "9121:9121"
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    depends_on:
+      - redis
+    networks:
+      - monitoring
+      - default
+    restart: unless-stopped
+
+  # PostgreSQL Exporter
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: gemini-postgres-exporter
+    ports:
+      - "9187:9187"
+    environment:
+      - DATA_SOURCE_NAME=postgresql://gemini:${POSTGRES_PASSWORD}@postgres:5432/gemini?sslmode=disable
+    depends_on:
+      - postgres
+    networks:
+      - monitoring
+      - default
+    restart: unless-stopped
+
+  # Nginx Prometheus Exporter
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:0.11.0
+    container_name: gemini-nginx-exporter
+    ports:
+      - "9113:9113"
+    command:
+      - -nginx.scrape-uri=http://nginx:8080/nginx_status
+    depends_on:
+      - nginx
+    networks:
+      - monitoring
+      - default
+    restart: unless-stopped
+
+  # cAdvisor for container metrics
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.2
+    container_name: gemini-cadvisor
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Blackbox Exporter for external monitoring
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.24.0
+    container_name: gemini-blackbox-exporter
+    ports:
+      - "9115:9115"
+    volumes:
+      - ./blackbox.yml:/etc/blackbox_exporter/config.yml
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Pushgateway for batch job metrics
+  pushgateway:
+    image: prom/pushgateway:v1.6.2
+    container_name: gemini-pushgateway
+    ports:
+      - "9091:9091"
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Karma for alert management dashboard
+  karma:
+    image: lmierzwa/karma:v0.117
+    container_name: gemini-karma
+    ports:
+      - "8085:8080"
+    environment:
+      - ALERTMANAGER_URI=http://alertmanager:9093
+    depends_on:
+      - alertmanager
+    networks:
+      - monitoring
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.karma.rule=Host(`karma.gemini.local`)"
+      - "traefik.http.services.karma.loadbalancer.server.port=8080"
+
+networks:
+  monitoring:
+    driver: bridge
+  default:
+    external: true
+    name: gemini_default
+
+volumes:
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+  loki_data:
+    driver: local

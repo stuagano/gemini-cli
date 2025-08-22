@@ -1,0 +1,555 @@
+name: 'Killer Demo: Scaling Issue Detection'
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, develop]
+    paths:
+      - '**/*.py'
+      - '**/*.js'
+      - '**/*.ts'
+      - '**/*.java'
+      - '**/*.go'
+      - '**/*.rs'
+  
+  push:
+    branches: [main, develop]
+    paths:
+      - '**/*.py'
+      - '**/*.js'
+      - '**/*.ts'
+      - '**/*.java'
+      - '**/*.go'
+      - '**/*.rs'
+  
+  workflow_dispatch:
+    inputs:
+      severity_threshold:
+        description: 'Minimum severity to report'
+        required: false
+        default: 'medium'
+        type: choice
+        options:
+          - 'low'
+          - 'medium'
+          - 'high'
+          - 'critical'
+      full_project_scan:
+        description: 'Scan entire project instead of just changes'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  statuses: write
+
+env:
+  PYTHON_VERSION: '3.11'
+  AGENT_SERVER_PORT: 8000
+
+jobs:
+  # Setup and start agent server
+  setup-infrastructure:
+    name: 'Setup Infrastructure'
+    runs-on: ubuntu-latest
+    outputs:
+      server-url: ${{ steps.server.outputs.url }}
+      server-ready: ${{ steps.health-check.outputs.ready }}
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: 'Setup Python'
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: 'Cache dependencies'
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: scaling-check-${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            scaling-check-${{ runner.os }}-pip-
+      
+      - name: 'Install dependencies'
+        run: |
+          pip install -r requirements.txt
+          pip install psutil sqlparse
+      
+      - name: 'Start agent server'
+        id: server
+        run: |
+          cd src
+          python start_server.py &
+          SERVER_PID=$!
+          echo "server_pid=$SERVER_PID" >> $GITHUB_OUTPUT
+          echo "url=http://localhost:${{ env.AGENT_SERVER_PORT }}" >> $GITHUB_OUTPUT
+          
+          # Save PID for cleanup
+          echo $SERVER_PID > ../server.pid
+      
+      - name: 'Health check'
+        id: health-check
+        run: |
+          echo "🔍 Checking agent server health..."
+          
+          timeout=60
+          while ! curl -s "http://localhost:${{ env.AGENT_SERVER_PORT }}/api/v1/health" > /dev/null; do
+            sleep 2
+            timeout=$((timeout - 2))
+            if [ $timeout -le 0 ]; then
+              echo "❌ Agent server health check failed"
+              exit 1
+            fi
+          done
+          
+          # Verify killer demo detector is available
+          HEALTH_RESPONSE=$(curl -s "http://localhost:${{ env.AGENT_SERVER_PORT }}/api/v1/health")
+          echo "Health response: $HEALTH_RESPONSE"
+          
+          echo "ready=true" >> $GITHUB_OUTPUT
+          echo "✅ Agent server is healthy and ready"
+      
+      - name: 'Keep server alive'
+        run: |
+          # Keep server running for dependent jobs
+          tail -f /dev/null &
+
+  # Killer Demo: N+1 Query Detection
+  detect-n-plus-one:
+    name: 'Detect N+1 Queries'
+    runs-on: ubuntu-latest
+    needs: setup-infrastructure
+    outputs:
+      n-plus-one-count: ${{ steps.analysis.outputs.count }}
+      critical-n-plus-one: ${{ steps.analysis.outputs.critical }}
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: 'Get changed files'
+        id: changed-files
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            CHANGED_FILES=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "${{ github.api_url }}/repos/${{ github.repository }}/pulls/${{ github.event.number }}/files" | \
+              jq -r '[.[] | select(.filename | test("\\.(py|js|ts|java|go|rs)$")) | .filename] | join(",")')
+          else
+            CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD | grep -E "\\.(py|js|ts|java|go|rs)$" | tr '\n' ',' | sed 's/,$//')
+          fi
+          
+          if [ "${{ github.event.inputs.full_project_scan }}" = "true" ]; then
+            CHANGED_FILES=$(find . -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.java" -o -name "*.go" -o -name "*.rs" | head -50 | tr '\n' ',' | sed 's/,$//')
+          fi
+          
+          echo "changed_files=$CHANGED_FILES" >> $GITHUB_OUTPUT
+          echo "🔍 Files to analyze for N+1 queries: $CHANGED_FILES"
+      
+      - name: 'Run N+1 detection'
+        id: analysis
+        if: steps.changed-files.outputs.changed_files != ''
+        run: |
+          echo "🚀 Running Killer Demo: N+1 Query Detection..."
+          
+          cat > n_plus_one_request.json << EOF
+          {
+            "id": "n-plus-one-${{ github.run_id }}",
+            "type": "developer",
+            "action": "detect_n_plus_one",
+            "payload": {
+              "files": ["${{ steps.changed-files.outputs.changed_files }}"],
+              "repository": "${{ github.repository }}",
+              "pr_number": "${{ github.event.number }}",
+              "commit_sha": "${{ github.sha }}",
+              "severity_threshold": "${{ github.event.inputs.severity_threshold || 'medium' }}",
+              "focus": "n_plus_one_queries"
+            },
+            "context": {
+              "github_event": "${{ github.event_name }}",
+              "detector_type": "n_plus_one",
+              "killer_demo": true
+            },
+            "timeout": 180
+          }
+          EOF
+          
+          RESPONSE=$(curl -s -X POST "${{ needs.setup-infrastructure.outputs.server-url }}/api/v1/agent/request" \
+            -H "Content-Type: application/json" \
+            -d @n_plus_one_request.json)
+          
+          echo "$RESPONSE" > n_plus_one_results.json
+          
+          # Extract metrics
+          N_PLUS_ONE_COUNT=$(echo "$RESPONSE" | jq -r '.result.issues | map(select(.type == "n_plus_one")) | length')
+          CRITICAL_COUNT=$(echo "$RESPONSE" | jq -r '.result.issues | map(select(.type == "n_plus_one" and .severity == "critical")) | length')
+          
+          echo "count=$N_PLUS_ONE_COUNT" >> $GITHUB_OUTPUT
+          echo "critical=$CRITICAL_COUNT" >> $GITHUB_OUTPUT
+          
+          echo "📊 N+1 Detection Results:"
+          echo "  Total N+1 Issues: $N_PLUS_ONE_COUNT"
+          echo "  Critical Issues: $CRITICAL_COUNT"
+          
+          # Show critical issues
+          if [ "$CRITICAL_COUNT" -gt 0 ]; then
+            echo "🔴 Critical N+1 Query Issues Found:"
+            echo "$RESPONSE" | jq -r '.result.issues[] | select(.type == "n_plus_one" and .severity == "critical") | "  - \(.file_path):\(.line_number) - \(.description)"'
+          fi
+      
+      - name: 'Upload N+1 results'
+        if: steps.changed-files.outputs.changed_files != ''
+        uses: actions/upload-artifact@v3
+        with:
+          name: n-plus-one-results
+          path: n_plus_one_results.json
+
+  # Killer Demo: Memory Leak Detection
+  detect-memory-leaks:
+    name: 'Detect Memory Leaks'
+    runs-on: ubuntu-latest
+    needs: setup-infrastructure
+    outputs:
+      memory-leak-count: ${{ steps.analysis.outputs.count }}
+      critical-leaks: ${{ steps.analysis.outputs.critical }}
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+      
+      - name: 'Get files for memory analysis'
+        id: files
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FILES=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "${{ github.api_url }}/repos/${{ github.repository }}/pulls/${{ github.event.number }}/files" | \
+              jq -r '[.[] | select(.filename | test("\\.(py|js|ts|java|go|rs)$")) | .filename] | join(",")')
+          else
+            FILES=$(git diff --name-only HEAD~1 HEAD | grep -E "\\.(py|js|ts|java|go|rs)$" | tr '\n' ',' | sed 's/,$//')
+          fi
+          
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+      
+      - name: 'Run memory leak detection'
+        id: analysis
+        if: steps.files.outputs.files != ''
+        run: |
+          echo "🧠 Running Memory Leak Detection..."
+          
+          cat > memory_leak_request.json << EOF
+          {
+            "id": "memory-leak-${{ github.run_id }}",
+            "type": "developer",
+            "action": "detect_memory_leaks",
+            "payload": {
+              "files": ["${{ steps.files.outputs.files }}"],
+              "repository": "${{ github.repository }}",
+              "pr_number": "${{ github.event.number }}",
+              "commit_sha": "${{ github.sha }}",
+              "analysis_type": "memory_leaks"
+            },
+            "context": {
+              "detector_type": "memory_leak",
+              "killer_demo": true
+            },
+            "timeout": 180
+          }
+          EOF
+          
+          RESPONSE=$(curl -s -X POST "${{ needs.setup-infrastructure.outputs.server-url }}/api/v1/agent/request" \
+            -H "Content-Type: application/json" \
+            -d @memory_leak_request.json)
+          
+          echo "$RESPONSE" > memory_leak_results.json
+          
+          LEAK_COUNT=$(echo "$RESPONSE" | jq -r '.result.issues | map(select(.type == "memory_leak")) | length')
+          CRITICAL_LEAKS=$(echo "$RESPONSE" | jq -r '.result.issues | map(select(.type == "memory_leak" and .severity == "critical")) | length')
+          
+          echo "count=$LEAK_COUNT" >> $GITHUB_OUTPUT
+          echo "critical=$CRITICAL_LEAKS" >> $GITHUB_OUTPUT
+          
+          echo "📊 Memory Leak Detection Results:"
+          echo "  Memory Leaks: $LEAK_COUNT"
+          echo "  Critical Leaks: $CRITICAL_LEAKS"
+      
+      - name: 'Upload memory leak results'
+        if: steps.files.outputs.files != ''
+        uses: actions/upload-artifact@v3
+        with:
+          name: memory-leak-results
+          path: memory_leak_results.json
+
+  # Killer Demo: Algorithm Complexity Analysis
+  analyze-algorithms:
+    name: 'Analyze Algorithm Complexity'
+    runs-on: ubuntu-latest
+    needs: setup-infrastructure
+    outputs:
+      inefficient-algorithms: ${{ steps.analysis.outputs.count }}
+      quadratic-or-worse: ${{ steps.analysis.outputs.quadratic }}
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+      
+      - name: 'Get files for algorithm analysis'
+        id: files
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FILES=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "${{ github.api_url }}/repos/${{ github.repository }}/pulls/${{ github.event.number }}/files" | \
+              jq -r '[.[] | select(.filename | test("\\.(py|js|ts|java|go|rs)$")) | .filename] | join(",")')
+          else
+            FILES=$(git diff --name-only HEAD~1 HEAD | grep -E "\\.(py|js|ts|java|go|rs)$" | tr '\n' ',' | sed 's/,$//')
+          fi
+          
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+      
+      - name: 'Run algorithm complexity analysis'
+        id: analysis
+        if: steps.files.outputs.files != ''
+        run: |
+          echo "⚡ Running Algorithm Complexity Analysis..."
+          
+          cat > algorithm_request.json << EOF
+          {
+            "id": "algorithm-${{ github.run_id }}",
+            "type": "developer",
+            "action": "analyze_algorithms",
+            "payload": {
+              "files": ["${{ steps.files.outputs.files }}"],
+              "repository": "${{ github.repository }}",
+              "analysis_type": "algorithm_complexity",
+              "focus": ["nested_loops", "string_concatenation", "linear_search", "recursion"]
+            },
+            "context": {
+              "detector_type": "algorithm_complexity",
+              "killer_demo": true
+            },
+            "timeout": 180
+          }
+          EOF
+          
+          RESPONSE=$(curl -s -X POST "${{ needs.setup-infrastructure.outputs.server-url }}/api/v1/agent/request" \
+            -H "Content-Type: application/json" \
+            -d @algorithm_request.json)
+          
+          echo "$RESPONSE" > algorithm_results.json
+          
+          INEFFICIENT_COUNT=$(echo "$RESPONSE" | jq -r '.result.issues | map(select(.type == "inefficient_algorithm")) | length')
+          QUADRATIC_COUNT=$(echo "$RESPONSE" | jq -r '.result.issues | map(select(.type == "inefficient_algorithm" and (.description | contains("O(n²)") or contains("O(n³)")))) | length')
+          
+          echo "count=$INEFFICIENT_COUNT" >> $GITHUB_OUTPUT
+          echo "quadratic=$QUADRATIC_COUNT" >> $GITHUB_OUTPUT
+          
+          echo "📊 Algorithm Analysis Results:"
+          echo "  Inefficient Algorithms: $INEFFICIENT_COUNT"
+          echo "  Quadratic or Worse: $QUADRATIC_COUNT"
+      
+      - name: 'Upload algorithm results'
+        if: steps.files.outputs.files != ''
+        uses: actions/upload-artifact@v3
+        with:
+          name: algorithm-results
+          path: algorithm_results.json
+
+  # Aggregate scaling analysis results
+  scaling-report:
+    name: 'Generate Scaling Report'
+    runs-on: ubuntu-latest
+    needs: [detect-n-plus-one, detect-memory-leaks, analyze-algorithms]
+    if: always()
+    steps:
+      - name: 'Download all analysis results'
+        uses: actions/download-artifact@v3
+        with:
+          path: scaling-results
+      
+      - name: 'Generate comprehensive scaling report'
+        id: report
+        run: |
+          echo "📋 Generating Killer Demo Scaling Report..."
+          
+          # Aggregate results
+          N_PLUS_ONE_COUNT=${{ needs.detect-n-plus-one.outputs.n-plus-one-count || '0' }}
+          CRITICAL_N_PLUS_ONE=${{ needs.detect-n-plus-one.outputs.critical-n-plus-one || '0' }}
+          MEMORY_LEAKS=${{ needs.detect-memory-leaks.outputs.memory-leak-count || '0' }}
+          CRITICAL_LEAKS=${{ needs.detect-memory-leaks.outputs.critical-leaks || '0' }}
+          INEFFICIENT_ALGORITHMS=${{ needs.analyze-algorithms.outputs.inefficient-algorithms || '0' }}
+          QUADRATIC_ALGORITHMS=${{ needs.analyze-algorithms.outputs.quadratic-or-worse || '0' }}
+          
+          TOTAL_SCALING_ISSUES=$((N_PLUS_ONE_COUNT + MEMORY_LEAKS + INEFFICIENT_ALGORITHMS))
+          CRITICAL_SCALING_ISSUES=$((CRITICAL_N_PLUS_ONE + CRITICAL_LEAKS + QUADRATIC_ALGORITHMS))
+          
+          # Calculate risk score
+          RISK_SCORE=$((CRITICAL_SCALING_ISSUES * 30 + (TOTAL_SCALING_ISSUES - CRITICAL_SCALING_ISSUES) * 10))
+          RISK_SCORE=$(echo "$RISK_SCORE" | awk '{print ($1 > 100) ? 100 : $1}')
+          
+          # Determine production readiness
+          PRODUCTION_READY="true"
+          if [ "$CRITICAL_SCALING_ISSUES" -gt 0 ] || [ "$RISK_SCORE" -gt 50 ]; then
+            PRODUCTION_READY="false"
+          fi
+          
+          echo "total_issues=$TOTAL_SCALING_ISSUES" >> $GITHUB_OUTPUT
+          echo "critical_issues=$CRITICAL_SCALING_ISSUES" >> $GITHUB_OUTPUT
+          echo "risk_score=$RISK_SCORE" >> $GITHUB_OUTPUT
+          echo "production_ready=$PRODUCTION_READY" >> $GITHUB_OUTPUT
+          
+          # Create detailed report
+          cat > scaling_report.md << EOF
+          # 🚀 Killer Demo: Scaling Analysis Report
+          
+          ## 📊 Executive Summary
+          - **Total Scaling Issues**: $TOTAL_SCALING_ISSUES
+          - **Critical Issues**: $CRITICAL_SCALING_ISSUES
+          - **Risk Score**: $RISK_SCORE/100
+          - **Production Ready**: $PRODUCTION_READY
+          
+          ## 🔍 Detailed Analysis
+          
+          ### N+1 Query Issues
+          - **Total**: $N_PLUS_ONE_COUNT
+          - **Critical**: $CRITICAL_N_PLUS_ONE
+          
+          ### Memory Leak Issues
+          - **Total**: $MEMORY_LEAKS
+          - **Critical**: $CRITICAL_LEAKS
+          
+          ### Algorithm Complexity Issues
+          - **Total**: $INEFFICIENT_ALGORITHMS
+          - **Quadratic or Worse**: $QUADRATIC_ALGORITHMS
+          
+          ## 🎯 Impact Assessment
+          EOF
+          
+          if [ "$CRITICAL_N_PLUS_ONE" -gt 0 ]; then
+            echo "- 🔴 **Critical N+1 queries detected**: Could cause severe performance degradation at scale" >> scaling_report.md
+          fi
+          
+          if [ "$CRITICAL_LEAKS" -gt 0 ]; then
+            echo "- 🔴 **Memory leaks detected**: Could cause application crashes in production" >> scaling_report.md
+          fi
+          
+          if [ "$QUADRATIC_ALGORITHMS" -gt 0 ]; then
+            echo "- 🔴 **Quadratic algorithms detected**: Performance will degrade exponentially with data growth" >> scaling_report.md
+          fi
+          
+          if [ "$TOTAL_SCALING_ISSUES" -eq 0 ]; then
+            echo "- ✅ **No scaling issues detected**: Code appears to be well-optimized for production" >> scaling_report.md
+          fi
+          
+          echo "Report generated: scaling_report.md"
+      
+      - name: 'Create killer demo PR comment'
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('scaling_report.md', 'utf8');
+            
+            const totalIssues = ${{ steps.report.outputs.total_issues }};
+            const criticalIssues = ${{ steps.report.outputs.critical_issues }};
+            const riskScore = ${{ steps.report.outputs.risk_score }};
+            const productionReady = ${{ steps.report.outputs.production_ready }};
+            
+            let commentBody = `## 🚀 Killer Demo: Scaling Issue Detection\n\n`;
+            
+            // Add status badges
+            const readyBadge = productionReady === 'true' ? '✅ PRODUCTION READY' : '❌ NOT PRODUCTION READY';
+            const riskBadge = riskScore < 30 ? '🟢 LOW RISK' : riskScore < 60 ? '🟡 MEDIUM RISK' : '🔴 HIGH RISK';
+            
+            commentBody += `**Status**: ${readyBadge} | **Risk Level**: ${riskBadge} (${riskScore}/100)\n\n`;
+            
+            if (criticalIssues > 0) {
+              commentBody += `🚨 **CRITICAL ALERT**: ${criticalIssues} critical scaling issues detected!\n\n`;
+              commentBody += `These issues could cause severe performance problems or crashes in production:\n\n`;
+            }
+            
+            commentBody += report;
+            
+            if (criticalIssues > 0) {
+              commentBody += `\n\n⚠️ **Action Required**: Please address critical scaling issues before merging.\n`;
+            } else if (totalIssues > 0) {
+              commentBody += `\n\n💡 **Recommendation**: Consider addressing the identified scaling issues for optimal performance.\n`;
+            } else {
+              commentBody += `\n\n🎉 **Excellent!** Your code is optimized for production scaling.\n`;
+            }
+            
+            commentBody += `\n---\n*Killer Demo powered by Gemini Enterprise Architect*`;
+            
+            // Update or create comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const existingComment = comments.data.find(comment => 
+              comment.body.includes('🚀 Killer Demo: Scaling Issue Detection')
+            );
+            
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: commentBody
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+      
+      - name: 'Set scaling check status'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const criticalIssues = ${{ steps.report.outputs.critical_issues }};
+            const totalIssues = ${{ steps.report.outputs.total_issues }};
+            const productionReady = ${{ steps.report.outputs.production_ready }};
+            
+            const state = productionReady === 'true' ? 'success' : 'failure';
+            const description = criticalIssues > 0 
+              ? `${criticalIssues} critical scaling issues detected`
+              : totalIssues > 0 
+                ? `${totalIssues} scaling issues found`
+                : 'No scaling issues detected';
+            
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: state,
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: description,
+              context: 'gemini/killer-demo-scaling'
+            });
+      
+      - name: 'Upload scaling report'
+        uses: actions/upload-artifact@v3
+        with:
+          name: killer-demo-scaling-report
+          path: |
+            scaling_report.md
+            scaling-results/
+          retention-days: 30
+      
+      - name: 'Fail on critical scaling issues'
+        if: steps.report.outputs.critical_issues > 0
+        run: |
+          echo "❌ KILLER DEMO FAILURE: ${{ steps.report.outputs.critical_issues }} critical scaling issues detected!"
+          echo "::error::Critical scaling issues must be resolved before production deployment"
+          exit 1

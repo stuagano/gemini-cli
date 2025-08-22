@@ -43,7 +43,7 @@ const mockGetInstallationInfo = vi.mocked(getInstallationInfo);
 const mockUpdateEventEmitter = vi.mocked(updateEventEmitter);
 
 describe('handleAutoUpdate', () => {
-  let mockSpawn: Mock;
+  let mockSpawn: Mock<[], MockChildProcess>;
   let mockUpdateInfo: UpdateObject;
   let mockSettings: LoadedSettings;
   let mockChildProcess: MockChildProcess;
@@ -65,7 +65,7 @@ describe('handleAutoUpdate', () => {
       merged: {
         disableAutoUpdate: false,
       },
-    } as LoadedSettings;
+    } as Partial<LoadedSettings>;
 
     mockChildProcess = Object.assign(new EventEmitter(), {
       stdin: Object.assign(new EventEmitter(), {
@@ -75,9 +75,7 @@ describe('handleAutoUpdate', () => {
       stderr: new EventEmitter(),
     }) as MockChildProcess;
 
-    mockSpawn.mockReturnValue(
-      mockChildProcess as unknown as ReturnType<typeof mockSpawn>,
-    );
+    mockSpawn.mockReturnValue(mockChildProcess);
   });
 
   afterEach(() => {

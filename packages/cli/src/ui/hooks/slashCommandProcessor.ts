@@ -52,6 +52,7 @@ export const useSlashCommandProcessor = (
   openPrivacyNotice: () => void,
   openSettingsDialog: () => void,
   toggleVimEnabled: () => Promise<boolean>,
+  setShowKnowledgeBase: (show: boolean) => void,
   setIsProcessing: (isProcessing: boolean) => void,
   setGeminiMdFileCount: (count: number) => void,
 ) => {
@@ -542,6 +543,7 @@ export const useSlashCommandProcessor = (
       setSessionShellAllowlist,
       setIsProcessing,
       setConfirmationRequest,
+      setShowKnowledgeBase,
     ],
   );
 

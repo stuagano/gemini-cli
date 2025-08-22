@@ -1,0 +1,419 @@
+# Error Budget Alerts for Gemini Enterprise Architect SLOs
+# Provides early warning when error budgets are being consumed too quickly
+
+groups:
+  # Agent Service Error Budget Alerts
+  - name: gemini.agent.error_budget
+    interval: 30s
+    rules:
+    
+    # Agent Response Time Error Budget Fast Burn
+    - alert: GeminiAgentResponseTimeErrorBudgetFastBurn
+      expr: |
+        (
+          1 - (
+            sum(rate(gemini_agent_response_time_seconds_bucket{le="2.0"}[1h])) by (agent_type) /
+            sum(rate(gemini_agent_response_time_seconds_count[1h])) by (agent_type)
+          )
+        ) * 100 > 14.4
+      for: 2m
+      labels:
+        severity: critical
+        team: platform
+        error_budget: fast_burn
+        slo: agent_response_time
+      annotations:
+        summary: "Agent response time error budget fast burn"
+        description: "Agent {{ $labels.agent_type }} is consuming error budget at {{ $value }}x the allowed rate"
+        runbook_url: "https://docs.gemini.ai/runbooks/error-budget-fast-burn"
+        error_budget_remaining: "{{ $value }}% consumed in last hour"
+        
+    # Agent Response Time Error Budget Slow Burn
+    - alert: GeminiAgentResponseTimeErrorBudgetSlowBurn
+      expr: |
+        (
+          1 - (
+            sum(rate(gemini_agent_response_time_seconds_bucket{le="2.0"}[6h])) by (agent_type) /
+            sum(rate(gemini_agent_response_time_seconds_count[6h])) by (agent_type)
+          )
+        ) * 100 > 6.0
+      for: 15m
+      labels:
+        severity: warning
+        team: platform
+        error_budget: slow_burn
+        slo: agent_response_time
+      annotations:
+        summary: "Agent response time error budget slow burn"
+        description: "Agent {{ $labels.agent_type }} is consuming error budget consistently"
+        runbook_url: "https://docs.gemini.ai/runbooks/error-budget-slow-burn"
+        
+    # Agent Availability Error Budget Fast Burn
+    - alert: GeminiAgentAvailabilityErrorBudgetFastBurn
+      expr: |
+        (
+          sum(rate(gemini_agent_requests_total{status!="success"}[1h])) by (agent_type) /
+          sum(rate(gemini_agent_requests_total[1h])) by (agent_type)
+        ) * 100 > 10
+      for: 2m
+      labels:
+        severity: critical
+        team: platform
+        error_budget: fast_burn
+        slo: agent_availability
+      annotations:
+        summary: "Agent availability error budget fast burn"
+        description: "Agent {{ $labels.agent_type }} error rate is {{ $value }}%, consuming error budget rapidly"
+        
+    # Agent Error Budget Exhaustion Warning
+    - alert: GeminiAgentErrorBudgetExhaustion
+      expr: |
+        (
+          1 - (
+            sum(rate(gemini_agent_response_time_seconds_bucket{le="2.0"}[30d])) by (agent_type) /
+            sum(rate(gemini_agent_response_time_seconds_count[30d])) by (agent_type)
+          )
+        ) * 100 > 90
+      for: 5m
+      labels:
+        severity: warning
+        team: platform
+        error_budget: exhaustion
+        slo: agent_response_time
+      annotations:
+        summary: "Agent error budget near exhaustion"
+        description: "Agent {{ $labels.agent_type }} has consumed 90% of monthly error budget"
+
+  # Scout Service Error Budget Alerts
+  - name: gemini.scout.error_budget
+    interval: 30s
+    rules:
+    
+    # Scout Indexing Success Rate Error Budget
+    - alert: GeminiScoutIndexingErrorBudgetFastBurn
+      expr: |
+        (
+          sum(rate(gemini_scout_files_indexed_total{status!="success"}[1h])) /
+          sum(rate(gemini_scout_files_indexed_total[1h]))
+        ) * 100 > 2
+      for: 2m
+      labels:
+        severity: critical
+        team: intelligence
+        error_budget: fast_burn
+        slo: scout_indexing_success
+      annotations:
+        summary: "Scout indexing error budget fast burn"
+        description: "Scout indexing failure rate is {{ $value }}%, consuming error budget rapidly"
+        
+    # Scout Detection Accuracy Error Budget
+    - alert: GeminiScoutAccuracyErrorBudget
+      expr: |
+        gemini_scout_duplicate_detection_accuracy_percent < 95
+      for: 10m
+      labels:
+        severity: warning
+        team: intelligence
+        error_budget: accuracy_degradation
+        slo: scout_detection_accuracy
+      annotations:
+        summary: "Scout detection accuracy below SLO"
+        description: "Scout detection accuracy is {{ $value }}%, below 95% target"
+
+  # Guardian Service Error Budget Alerts
+  - name: gemini.guardian.error_budget
+    interval: 30s
+    rules:
+    
+    # Guardian Validation Error Budget Fast Burn
+    - alert: GeminiGuardianValidationErrorBudgetFastBurn
+      expr: |
+        (
+          sum(rate(gemini_guardian_validations_total{status!="success"}[1h])) by (validation_type) /
+          sum(rate(gemini_guardian_validations_total[1h])) by (validation_type)
+        ) * 100 > 1
+      for: 2m
+      labels:
+        severity: critical
+        team: security
+        error_budget: fast_burn
+        slo: guardian_validation_success
+      annotations:
+        summary: "Guardian validation error budget fast burn"
+        description: "Guardian {{ $labels.validation_type }} validation failure rate is {{ $value }}%"
+        
+    # Guardian Response Time Error Budget
+    - alert: GeminiGuardianResponseTimeErrorBudget
+      expr: |
+        (
+          1 - (
+            sum(rate(gemini_guardian_validation_time_seconds_bucket{le="5.0"}[1h])) by (validation_type) /
+            sum(rate(gemini_guardian_validation_time_seconds_count[1h])) by (validation_type)
+          )
+        ) * 100 > 5
+      for: 5m
+      labels:
+        severity: warning
+        team: security
+        error_budget: slow_burn
+        slo: guardian_response_time
+      annotations:
+        summary: "Guardian response time error budget burn"
+        description: "Guardian {{ $labels.validation_type }} response time SLO is being violated"
+
+  # Infrastructure Error Budget Alerts
+  - name: gemini.infrastructure.error_budget
+    interval: 30s
+    rules:
+    
+    # System Uptime Error Budget Fast Burn
+    - alert: GeminiSystemUptimeErrorBudgetFastBurn
+      expr: |
+        (
+          1 - avg_over_time(up{job=~"gemini-.*"}[1h])
+        ) * 100 > 720
+      for: 1m
+      labels:
+        severity: critical
+        team: platform
+        error_budget: fast_burn
+        slo: system_uptime
+      annotations:
+        summary: "System uptime error budget fast burn"
+        description: "System downtime is consuming uptime error budget at {{ $value }}x normal rate"
+        
+    # Database Availability Error Budget
+    - alert: GeminiDatabaseAvailabilityErrorBudget
+      expr: |
+        (
+          1 - avg_over_time(up{job="postgresql"}[1h])
+        ) * 100 > 0.1
+      for: 2m
+      labels:
+        severity: critical
+        team: platform
+        error_budget: fast_burn
+        slo: database_availability
+      annotations:
+        summary: "Database availability error budget burn"
+        description: "Database downtime detected, consuming availability error budget"
+        
+    # API Gateway Latency Error Budget
+    - alert: GeminiAPIGatewayLatencyErrorBudget
+      expr: |
+        (
+          1 - (
+            sum(rate(http_request_duration_seconds_bucket{job="nginx",le="0.5"}[1h])) /
+            sum(rate(http_request_duration_seconds_count{job="nginx"}[1h]))
+          )
+        ) * 100 > 2
+      for: 5m
+      labels:
+        severity: warning
+        team: platform
+        error_budget: slow_burn
+        slo: api_gateway_latency
+      annotations:
+        summary: "API Gateway latency error budget burn"
+        description: "API Gateway latency is above target, consuming error budget"
+
+  # Business Impact Error Budget Alerts
+  - name: gemini.business.error_budget
+    interval: 60s
+    rules:
+    
+    # Cost Optimization Effectiveness Error Budget
+    - alert: GeminiCostOptimizationEffectivenessErrorBudget
+      expr: |
+        (
+          sum(rate(gemini_optimization_recommendations_with_savings_total[24h])) /
+          sum(rate(gemini_optimization_recommendations_total[24h]))
+        ) * 100 < 80
+      for: 30m
+      labels:
+        severity: warning
+        team: optimization
+        error_budget: effectiveness_degradation
+        slo: cost_optimization_effectiveness
+      annotations:
+        summary: "Cost optimization effectiveness below target"
+        description: "Cost optimization effectiveness is {{ $value }}%, below 80% target"
+        
+    # Developer Productivity Error Budget
+    - alert: GeminiDeveloperProductivityErrorBudget
+      expr: |
+        (
+          avg(gemini_developer_productivity_requests_per_hour) /
+          avg(gemini_developer_productivity_baseline_requests_per_hour)
+        ) < 0.75
+      for: 1h
+      labels:
+        severity: warning
+        team: business
+        error_budget: productivity_degradation
+        slo: developer_productivity
+      annotations:
+        summary: "Developer productivity below baseline"
+        description: "Developer productivity is {{ $value | humanizePercentage }} of baseline"
+
+  # DORA Metrics Error Budget Alerts
+  - name: gemini.dora.error_budget
+    interval: 60s
+    rules:
+    
+    # Deployment Frequency Error Budget
+    - alert: GeminiDeploymentFrequencyErrorBudget
+      expr: |
+        sum(increase(gemini_deployments_total[24h])) < 1
+      for: 0m
+      labels:
+        severity: warning
+        team: platform
+        error_budget: deployment_frequency
+        slo: deployment_frequency
+      annotations:
+        summary: "Deployment frequency below target"
+        description: "Less than 1 deployment in the last 24 hours"
+        
+    # Change Failure Rate Error Budget
+    - alert: GeminiChangeFailureRateErrorBudget
+      expr: |
+        (
+          sum(rate(gemini_deployment_failures_total[24h])) /
+          sum(rate(gemini_deployments_total[24h]))
+        ) * 100 > 15
+      for: 0m
+      labels:
+        severity: warning
+        team: platform
+        error_budget: change_failure_rate
+        slo: change_failure_rate
+      annotations:
+        summary: "Change failure rate above target"
+        description: "Change failure rate is {{ $value }}%, above 15% target"
+        
+    # Lead Time Error Budget
+    - alert: GeminiLeadTimeErrorBudget
+      expr: |
+        histogram_quantile(0.5, sum(rate(gemini_lead_time_seconds_bucket[24h])) by (le)) / 3600 > 24
+      for: 30m
+      labels:
+        severity: warning
+        team: platform
+        error_budget: lead_time
+        slo: lead_time
+      annotations:
+        summary: "Lead time above target"
+        description: "Median lead time is {{ $value }} hours, above 24 hour target"
+        
+    # MTTR Error Budget
+    - alert: GeminiMTTRErrorBudget
+      expr: |
+        avg(gemini_incident_resolution_time_seconds) / 3600 > 1
+      for: 15m
+      labels:
+        severity: warning
+        team: platform
+        error_budget: mttr
+        slo: mttr
+      annotations:
+        summary: "MTTR above target"
+        description: "Mean time to recovery is {{ $value }} hours, above 1 hour target"
+
+  # Multi-Window Burn Rate Alerts
+  - name: gemini.multi_window_burn_rate
+    interval: 30s
+    rules:
+    
+    # Agent SLO Multi-Window Burn Rate
+    - alert: GeminiAgentSLOMultiWindowBurnRate
+      expr: |
+        (
+          (
+            1 - (
+              sum(rate(gemini_agent_response_time_seconds_bucket{le="2.0"}[1h])) by (agent_type) /
+              sum(rate(gemini_agent_response_time_seconds_count[1h])) by (agent_type)
+            )
+          ) > (14.4 * 0.005)
+        )
+        and
+        (
+          (
+            1 - (
+              sum(rate(gemini_agent_response_time_seconds_bucket{le="2.0"}[5m])) by (agent_type) /
+              sum(rate(gemini_agent_response_time_seconds_count[5m])) by (agent_type)
+            )
+          ) > (14.4 * 0.005)
+        )
+      for: 2m
+      labels:
+        severity: critical
+        team: platform
+        alert_type: multi_window_burn_rate
+        slo: agent_response_time
+      annotations:
+        summary: "Agent SLO multi-window burn rate violation"
+        description: "Agent {{ $labels.agent_type }} is violating SLO in both short and long windows"
+        
+    # System Uptime Multi-Window Burn Rate
+    - alert: GeminiSystemUptimeMultiWindowBurnRate
+      expr: |
+        (
+          (1 - avg_over_time(up{job=~"gemini-.*"}[1h])) > 0.0005
+        )
+        and
+        (
+          (1 - avg_over_time(up{job=~"gemini-.*"}[5m])) > 0.0005
+        )
+      for: 1m
+      labels:
+        severity: critical
+        team: platform
+        alert_type: multi_window_burn_rate
+        slo: system_uptime
+      annotations:
+        summary: "System uptime multi-window burn rate violation"
+        description: "System uptime is violating SLO in both short and long windows"
+
+  # Error Budget Remaining Alerts
+  - name: gemini.error_budget_remaining
+    interval: 300s  # 5 minutes
+    rules:
+    
+    # Low Error Budget Remaining
+    - alert: GeminiLowErrorBudgetRemaining
+      expr: |
+        (
+          (1 - (
+            sum(rate(gemini_agent_response_time_seconds_bucket{le="2.0"}[30d])) by (agent_type) /
+            sum(rate(gemini_agent_response_time_seconds_count[30d])) by (agent_type)
+          )) / (1 - 0.995)
+        ) * 100 > 75
+      for: 15m
+      labels:
+        severity: warning
+        team: platform
+        alert_type: error_budget_remaining
+        slo: agent_response_time
+      annotations:
+        summary: "Low error budget remaining"
+        description: "Agent {{ $labels.agent_type }} has consumed {{ $value }}% of monthly error budget"
+        
+    # Critical Error Budget Remaining
+    - alert: GeminiCriticalErrorBudgetRemaining
+      expr: |
+        (
+          (1 - (
+            sum(rate(gemini_agent_response_time_seconds_bucket{le="2.0"}[30d])) by (agent_type) /
+            sum(rate(gemini_agent_response_time_seconds_count[30d])) by (agent_type)
+          )) / (1 - 0.995)
+        ) * 100 > 90
+      for: 5m
+      labels:
+        severity: critical
+        team: platform
+        alert_type: error_budget_remaining
+        slo: agent_response_time
+      annotations:
+        summary: "Critical error budget remaining"
+        description: "Agent {{ $labels.agent_type }} has consumed {{ $value }}% of monthly error budget - SLO at risk"

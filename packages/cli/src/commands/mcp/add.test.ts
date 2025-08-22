@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { vi } from 'vitest';
 import yargs from 'yargs';
 import { addCommand } from './add.js';
-import { loadSettings, SettingScope } from '../../config/settings.js';
+import { loadSettings, SettingScope, LoadedSettings } from '../../config/settings.js';
 
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
@@ -33,9 +34,8 @@ describe('mcp add command', () => {
     parser = yargsInstance;
     mockSetValue = vi.fn();
     mockedLoadSettings.mockReturnValue({
-      forScope: () => ({ settings: {} }),
       setValue: mockSetValue,
-    });
+    } as Partial<LoadedSettings>);
   });
 
   it('should add a stdio server to project settings', async () => {

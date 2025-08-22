@@ -38,7 +38,7 @@ describe('aboutCommand', () => {
       ui: {
         addItem: vi.fn(),
       },
-    } as unknown as CommandContext);
+    } as CommandContext);
 
     vi.mocked(versionUtils.getCliVersion).mockResolvedValue('test-version');
     vi.spyOn(mockContext.services.config!, 'getModel').mockReturnValue(
@@ -50,7 +50,7 @@ describe('aboutCommand', () => {
     });
     vi.spyOn(mockContext.services.config!, 'getIdeClient').mockReturnValue({
       getDetectedIdeDisplayName: vi.fn().mockReturnValue('test-ide'),
-    } as Partial<IdeClient> as IdeClient);
+    } as IdeClient);
   });
 
   afterEach(() => {
@@ -126,7 +126,7 @@ describe('aboutCommand', () => {
   it('should not show ide client when it is not detected', async () => {
     vi.spyOn(mockContext.services.config!, 'getIdeClient').mockReturnValue({
       getDetectedIdeDisplayName: vi.fn().mockReturnValue(undefined),
-    } as Partial<IdeClient> as IdeClient);
+    } as IdeClient);
 
     process.env.SANDBOX = '';
     if (!aboutCommand.action) {

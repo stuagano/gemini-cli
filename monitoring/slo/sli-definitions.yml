@@ -1,0 +1,324 @@
+# Service Level Indicators (SLIs) for Gemini Enterprise Architect
+# Defines the measurable indicators that feed into SLOs
+
+# Agent Service Level Indicators
+agent_slis:
+  
+  # Response Time SLI
+  response_time:
+    description: "Percentage of agent requests completed within target time"
+    query_good: 'sum(rate(gemini_agent_response_time_seconds_bucket{le="2.0"}[5m])) by (agent_type)'
+    query_total: 'sum(rate(gemini_agent_response_time_seconds_count[5m])) by (agent_type)'
+    target_threshold: "2.0"  # seconds
+    measurement_window: "5m"
+    
+  # Availability SLI
+  availability:
+    description: "Percentage of agent requests that succeed"
+    query_good: 'sum(rate(gemini_agent_requests_total{status="success"}[5m])) by (agent_type)'
+    query_total: 'sum(rate(gemini_agent_requests_total[5m])) by (agent_type)'
+    measurement_window: "5m"
+    
+  # Error Rate SLI
+  error_rate:
+    description: "Percentage of agent requests that result in errors"
+    query_bad: 'sum(rate(gemini_agent_requests_total{status=~"error|failed"}[5m])) by (agent_type)'
+    query_total: 'sum(rate(gemini_agent_requests_total[5m])) by (agent_type)'
+    measurement_window: "5m"
+    
+  # Queue Health SLI
+  queue_health:
+    description: "Percentage of time agent queue size is below threshold"
+    query_good: 'avg_over_time(gemini_agent_queue_size[5m]) < 50'
+    query_total: "1"
+    target_threshold: 50
+    measurement_window: "5m"
+
+# Scout Service Level Indicators
+scout_slis:
+  
+  # Indexing Success Rate SLI
+  indexing_success_rate:
+    description: "Percentage of files successfully indexed"
+    query_good: 'sum(rate(gemini_scout_files_indexed_total{status="success"}[5m]))'
+    query_total: 'sum(rate(gemini_scout_files_indexed_total[5m]))'
+    measurement_window: "5m"
+    
+  # Processing Speed SLI
+  processing_speed:
+    description: "Percentage of files processed within target time"
+    query_good: 'sum(rate(gemini_scout_processing_time_seconds_bucket{le="1.0"}[5m]))'
+    query_total: 'sum(rate(gemini_scout_processing_time_seconds_count[5m]))'
+    target_threshold: "1.0"  # seconds
+    measurement_window: "5m"
+    
+  # Detection Accuracy SLI
+  detection_accuracy:
+    description: "Scout duplicate detection accuracy percentage"
+    query_value: 'gemini_scout_duplicate_detection_accuracy_percent'
+    target_threshold: 95.0
+    measurement_window: "1m"
+    
+  # False Positive Rate SLI
+  false_positive_rate:
+    description: "Scout false positive rate (should be low)"
+    query_value: 'gemini_scout_false_positive_rate_percent'
+    target_threshold: 10.0  # Should be below this
+    measurement_window: "5m"
+    direction: "lower_is_better"
+    
+  # Memory Efficiency SLI
+  memory_efficiency:
+    description: "Scout memory usage efficiency"
+    query_value: 'sum(gemini_scout_index_memory_usage_bytes) / sum(gemini_scout_total_files_indexed)'
+    target_threshold: 1048576  # 1MB per file average
+    measurement_window: "5m"
+    direction: "lower_is_better"
+
+# Guardian Service Level Indicators
+guardian_slis:
+  
+  # Validation Success Rate SLI
+  validation_success_rate:
+    description: "Percentage of validations completed successfully"
+    query_good: 'sum(rate(gemini_guardian_validations_total{status="success"}[5m])) by (validation_type)'
+    query_total: 'sum(rate(gemini_guardian_validations_total[5m])) by (validation_type)'
+    measurement_window: "5m"
+    
+  # Validation Response Time SLI
+  validation_response_time:
+    description: "Percentage of validations completed within target time"
+    query_good: 'sum(rate(gemini_guardian_validation_time_seconds_bucket{le="5.0"}[5m])) by (validation_type)'
+    query_total: 'sum(rate(gemini_guardian_validation_time_seconds_count[5m])) by (validation_type)'
+    target_threshold: "5.0"  # seconds
+    measurement_window: "5m"
+    
+  # Coverage SLI
+  coverage:
+    description: "Percentage of code covered by Guardian validations"
+    query_value: 'gemini_guardian_code_coverage_percent'
+    target_threshold: 90.0
+    measurement_window: "1h"
+
+# Killer Demo Service Level Indicators
+killer_demo_slis:
+  
+  # Detection Accuracy SLI
+  detection_accuracy:
+    description: "Killer Demo scaling issue detection accuracy"
+    query_value: 'gemini_killer_demo_detection_accuracy_percent'
+    target_threshold: 90.0
+    measurement_window: "1h"
+    
+  # False Positive Rate SLI
+  false_positive_rate:
+    description: "Killer Demo false positive rate"
+    query_value: 'gemini_killer_demo_false_positive_rate_percent'
+    target_threshold: 15.0
+    measurement_window: "1h"
+    direction: "lower_is_better"
+    
+  # Impact Measurement SLI
+  impact_measurement:
+    description: "Percentage of detected issues with measurable impact"
+    query_good: 'sum(rate(gemini_scaling_issues_with_measured_impact_total[1h]))'
+    query_total: 'sum(rate(gemini_scaling_issues_detected_total[1h]))'
+    measurement_window: "1h"
+    
+  # Cost Savings Accuracy SLI
+  cost_savings_accuracy:
+    description: "Accuracy of cost savings predictions"
+    query_value: 'gemini_killer_demo_cost_prediction_accuracy_percent'
+    target_threshold: 80.0
+    measurement_window: "24h"
+
+# Knowledge Base Service Level Indicators
+knowledge_slis:
+  
+  # Query Success Rate SLI
+  query_success_rate:
+    description: "Percentage of knowledge base queries that succeed"
+    query_good: 'sum(rate(gemini_knowledge_queries_total{status="success"}[5m])) by (query_type)'
+    query_total: 'sum(rate(gemini_knowledge_queries_total[5m])) by (query_type)'
+    measurement_window: "5m"
+    
+  # Query Response Time SLI
+  query_response_time:
+    description: "Percentage of queries completed within target time"
+    query_good: 'sum(rate(gemini_knowledge_query_duration_seconds_bucket{le="3.0"}[5m])) by (query_type)'
+    query_total: 'sum(rate(gemini_knowledge_query_duration_seconds_count[5m])) by (query_type)'
+    target_threshold: "3.0"  # seconds
+    measurement_window: "5m"
+    
+  # Result Relevance SLI
+  result_relevance:
+    description: "Average relevance score of knowledge base results"
+    query_value: 'avg(gemini_knowledge_query_relevance_score)'
+    target_threshold: 0.8
+    measurement_window: "1h"
+    
+  # Cache Hit Rate SLI
+  cache_hit_rate:
+    description: "Knowledge base cache hit rate"
+    query_good: 'sum(rate(gemini_knowledge_cache_hits_total[5m]))'
+    query_total: 'sum(rate(gemini_knowledge_cache_hits_total[5m])) + sum(rate(gemini_knowledge_cache_misses_total[5m]))'
+    measurement_window: "5m"
+
+# Infrastructure Service Level Indicators
+infrastructure_slis:
+  
+  # System Uptime SLI
+  system_uptime:
+    description: "Percentage of time systems are up and running"
+    query_good: 'up{job=~"gemini-.*"}'
+    query_total: "1"
+    measurement_window: "1m"
+    
+  # Database Availability SLI
+  database_availability:
+    description: "Database availability percentage"
+    query_good: 'up{job="postgresql"}'
+    query_total: "1"
+    measurement_window: "1m"
+    
+  # API Gateway Latency SLI
+  api_gateway_latency:
+    description: "Percentage of API requests served within latency target"
+    query_good: 'sum(rate(http_request_duration_seconds_bucket{job="nginx",le="0.5"}[5m]))'
+    query_total: 'sum(rate(http_request_duration_seconds_count{job="nginx"}[5m]))'
+    target_threshold: "0.5"  # seconds
+    measurement_window: "5m"
+    
+  # Resource Utilization SLI
+  resource_utilization:
+    description: "Percentage of time resource utilization is within healthy range"
+    cpu_query_good: 'avg(gemini_system_cpu_usage_percent) < 80'
+    memory_query_good: 'avg(gemini_system_memory_usage_bytes) / avg(gemini_system_memory_total_bytes) < 0.85'
+    query_total: "1"
+    cpu_threshold: 80.0
+    memory_threshold: 85.0
+    measurement_window: "5m"
+
+# Business Service Level Indicators
+business_slis:
+  
+  # Cost Optimization Effectiveness SLI
+  cost_optimization_effectiveness:
+    description: "Percentage of optimization recommendations that result in savings"
+    query_good: 'sum(rate(gemini_optimization_recommendations_with_savings_total[24h]))'
+    query_total: 'sum(rate(gemini_optimization_recommendations_total[24h]))'
+    measurement_window: "24h"
+    
+  # Developer Productivity SLI
+  developer_productivity:
+    description: "Developer productivity relative to baseline"
+    query_value: 'avg(gemini_developer_productivity_requests_per_hour) / avg(gemini_developer_productivity_baseline_requests_per_hour)'
+    target_threshold: 0.75  # 75% of baseline
+    measurement_window: "1h"
+    
+  # Time to Resolution SLI
+  time_to_resolution:
+    description: "Percentage of issues resolved within target time"
+    query_good: 'sum(rate(gemini_issues_resolved_within_24h_total[5m]))'
+    query_total: 'sum(rate(gemini_issues_detected_total[5m]))'
+    target_threshold: "24h"
+    measurement_window: "5m"
+    
+  # Customer Satisfaction SLI
+  customer_satisfaction:
+    description: "Customer satisfaction score"
+    query_value: 'avg(gemini_customer_satisfaction_score)'
+    target_threshold: 4.0  # Out of 5
+    measurement_window: "24h"
+    
+  # Bug Introduction Rate SLI
+  bug_introduction_rate:
+    description: "Rate of bugs introduced per deployment"
+    query_value: 'sum(rate(gemini_bugs_introduced_total[24h])) / sum(rate(gemini_deployments_total[24h]))'
+    target_threshold: 0.1  # 0.1 bugs per deployment
+    measurement_window: "24h"
+    direction: "lower_is_better"
+
+# DORA Metrics as SLIs
+dora_slis:
+  
+  # Deployment Frequency SLI
+  deployment_frequency:
+    description: "Number of deployments per day"
+    query_value: 'sum(increase(gemini_deployments_total[24h])) / 1'  # Deployments per day
+    target_threshold: 1.0  # At least 1 deployment per day
+    measurement_window: "24h"
+    
+  # Lead Time for Changes SLI
+  lead_time:
+    description: "Lead time for changes (median)"
+    query_value: 'histogram_quantile(0.5, sum(rate(gemini_lead_time_seconds_bucket[24h])) by (le)) / 3600'  # Hours
+    target_threshold: 24.0  # 24 hours
+    measurement_window: "24h"
+    direction: "lower_is_better"
+    
+  # Change Failure Rate SLI
+  change_failure_rate:
+    description: "Percentage of deployments that cause failures"
+    query_bad: 'sum(rate(gemini_deployment_failures_total[24h]))'
+    query_total: 'sum(rate(gemini_deployments_total[24h]))'
+    target_threshold: 0.15  # 15% failure rate
+    measurement_window: "24h"
+    direction: "lower_is_better"
+    
+  # Mean Time to Recovery SLI
+  mttr:
+    description: "Mean time to recovery from incidents"
+    query_value: 'avg(gemini_incident_resolution_time_seconds) / 3600'  # Hours
+    target_threshold: 1.0  # 1 hour
+    measurement_window: "24h"
+    direction: "lower_is_better"
+
+# Error Budget Definitions
+error_budgets:
+  
+  # Agent Response Time Error Budget
+  agent_response_time:
+    slo_target: 99.5  # 99.5% within 2 seconds
+    error_budget_period: "30d"
+    burn_rate_thresholds:
+      fast: 14.4    # 2% of monthly budget in 1 hour
+      slow: 6.0     # 5% of monthly budget in 6 hours
+    
+  # System Uptime Error Budget
+  system_uptime:
+    slo_target: 99.95  # 99.95% uptime
+    error_budget_period: "30d"
+    burn_rate_thresholds:
+      fast: 720     # Very fast burn rate
+      slow: 120     # Moderate burn rate
+    
+  # Scout Accuracy Error Budget
+  scout_accuracy:
+    slo_target: 95.0   # 95% accuracy
+    error_budget_period: "7d"
+    burn_rate_thresholds:
+      fast: 10      # High inaccuracy rate
+      slow: 2       # Moderate inaccuracy rate
+
+# Alerting Thresholds
+alerting_thresholds:
+  
+  # Fast Burn Rate Alerts (high urgency)
+  fast_burn:
+    evaluation_window: "5m"
+    severity: "critical"
+    notification_channels: ["pagerduty", "slack-critical"]
+    
+  # Slow Burn Rate Alerts (medium urgency)
+  slow_burn:
+    evaluation_window: "30m"
+    severity: "warning"
+    notification_channels: ["slack-alerts", "email"]
+    
+  # Error Budget Exhaustion Alerts
+  budget_exhaustion:
+    remaining_budget_threshold: 10  # Alert when <10% budget remains
+    evaluation_window: "1h"
+    severity: "warning"
+    notification_channels: ["slack-alerts", "email-management"]

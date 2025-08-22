@@ -1,0 +1,163 @@
+{{ define "__alert_severity_prefix" }}{{ if eq .Labels.severity "critical" }}🚨{{ else if eq .Labels.severity "warning" }}⚠️{{ else if eq .Labels.severity "info" }}ℹ️{{ else }}🔔{{ end }}{{ end }}
+
+{{ define "__alert_severity_prefix_title" }}{{ if eq .Labels.severity "critical" }}[CRITICAL]{{ else if eq .Labels.severity "warning" }}[WARNING]{{ else if eq .Labels.severity "info" }}[INFO]{{ else }}[ALERT]{{ end }}{{ end }}
+
+{{ define "slack.gemini.title" }}{{ template "__alert_severity_prefix" . }} {{ .Labels.alertname }}{{ if .Labels.service }} - {{ .Labels.service }}{{ end }}{{ end }}
+
+{{ define "slack.gemini.text" }}
+{{ if gt (len .Alerts.Firing) 0 }}
+**🔥 FIRING ALERTS ({{ len .Alerts.Firing }})**
+{{ range .Alerts.Firing }}
+• **{{ .Annotations.summary }}**
+  {{ .Annotations.description }}
+  
+  📊 **Details:**
+  • Service: `{{ .Labels.service }}`
+  • Severity: `{{ .Labels.severity }}`
+  • Team: `{{ .Labels.team }}`
+  {{ if .Labels.instance }}• Instance: `{{ .Labels.instance }}`{{ end }}
+  {{ if .Labels.agent_type }}• Agent Type: `{{ .Labels.agent_type }}`{{ end }}
+  
+  {{ if .Annotations.runbook_url }}📖 [Runbook]({{ .Annotations.runbook_url }}){{ end }}
+  {{ if .GeneratorURL }}🔗 [View in Prometheus]({{ .GeneratorURL }}){{ end }}
+  
+{{ end }}
+{{ end }}
+
+{{ if gt (len .Alerts.Resolved) 0 }}
+**✅ RESOLVED ALERTS ({{ len .Alerts.Resolved }})**
+{{ range .Alerts.Resolved }}
+• **{{ .Annotations.summary }}** - RESOLVED
+  Duration: {{ .StartsAt.Format "15:04:05" }} - {{ .EndsAt.Format "15:04:05" }}
+{{ end }}
+{{ end }}
+{{ end }}
+
+{{ define "email.gemini.subject" }}{{ template "__alert_severity_prefix_title" . }} Gemini {{ .Labels.alertname }}{{ if .Labels.service }} - {{ .Labels.service }}{{ end }}{{ end }}
+
+{{ define "email.gemini.html" }}
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
+        .container { background-color: white; padding: 20px; border-radius: 8px; max-width: 600px; margin: 0 auto; }
+        .header { border-left: 4px solid #dc3545; padding-left: 16px; margin-bottom: 20px; }
+        .header.warning { border-left-color: #ffc107; }
+        .header.info { border-left-color: #17a2b8; }
+        .alert-item { background-color: #f8f9fa; padding: 15px; margin-bottom: 15px; border-radius: 4px; border: 1px solid #dee2e6; }
+        .alert-summary { font-weight: bold; color: #dc3545; margin-bottom: 8px; }
+        .alert-description { margin-bottom: 12px; }
+        .alert-details { font-size: 0.9em; color: #6c757d; }
+        .alert-details strong { color: #495057; }
+        .resolved { background-color: #d4edda; border-color: #c3e6cb; }
+        .resolved .alert-summary { color: #155724; }
+        .buttons { margin-top: 20px; }
+        .button { display: inline-block; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 4px; margin-right: 10px; }
+        .timestamp { font-size: 0.8em; color: #6c757d; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header {{ .CommonLabels.severity }}">
+            <h2>{{ template "__alert_severity_prefix" . }} Gemini Alert: {{ .GroupLabels.alertname }}</h2>
+            <p><strong>Service:</strong> {{ .CommonLabels.service }}</p>
+            <p><strong>Team:</strong> {{ .CommonLabels.team }}</p>
+            <p><strong>Severity:</strong> {{ .CommonLabels.severity }}</p>
+        </div>
+
+        {{ if gt (len .Alerts.Firing) 0 }}
+        <h3>🔥 Firing Alerts ({{ len .Alerts.Firing }})</h3>
+        {{ range .Alerts.Firing }}
+        <div class="alert-item">
+            <div class="alert-summary">{{ .Annotations.summary }}</div>
+            <div class="alert-description">{{ .Annotations.description }}</div>
+            <div class="alert-details">
+                <strong>Started:</strong> {{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}<br>
+                {{ if .Labels.instance }}<strong>Instance:</strong> {{ .Labels.instance }}<br>{{ end }}
+                {{ if .Labels.agent_type }}<strong>Agent Type:</strong> {{ .Labels.agent_type }}<br>{{ end }}
+                {{ if .Annotations.runbook_url }}<strong>Runbook:</strong> <a href="{{ .Annotations.runbook_url }}">{{ .Annotations.runbook_url }}</a><br>{{ end }}
+            </div>
+        </div>
+        {{ end }}
+        {{ end }}
+
+        {{ if gt (len .Alerts.Resolved) 0 }}
+        <h3>✅ Resolved Alerts ({{ len .Alerts.Resolved }})</h3>
+        {{ range .Alerts.Resolved }}
+        <div class="alert-item resolved">
+            <div class="alert-summary">{{ .Annotations.summary }} - RESOLVED</div>
+            <div class="alert-details">
+                <strong>Duration:</strong> {{ .StartsAt.Format "15:04:05" }} - {{ .EndsAt.Format "15:04:05" }}<br>
+                <strong>Total Duration:</strong> {{ .EndsAt.Sub .StartsAt }}
+            </div>
+        </div>
+        {{ end }}
+        {{ end }}
+
+        <div class="buttons">
+            {{ if .CommonAnnotations.runbook_url }}
+            <a href="{{ .CommonAnnotations.runbook_url }}" class="button">📖 View Runbook</a>
+            {{ end }}
+            <a href="http://grafana.gemini.ai/dashboard/alerts" class="button">📊 View Dashboard</a>
+        </div>
+
+        <div class="timestamp">
+            Alert generated at {{ now.Format "2006-01-02 15:04:05 UTC" }}
+        </div>
+    </div>
+</body>
+</html>
+{{ end }}
+
+{{ define "pagerduty.gemini.description" }}{{ .CommonLabels.alertname }}: {{ .CommonAnnotations.summary }}{{ end }}
+
+{{ define "pagerduty.gemini.client" }}Gemini Enterprise Architect{{ end }}
+
+{{ define "pagerduty.gemini.details" }}
+{
+  "alertname": "{{ .CommonLabels.alertname }}",
+  "summary": "{{ .CommonAnnotations.summary }}",
+  "description": "{{ .CommonAnnotations.description }}",
+  "severity": "{{ .CommonLabels.severity }}",
+  "service": "{{ .CommonLabels.service }}",
+  "team": "{{ .CommonLabels.team }}",
+  "instance": "{{ .CommonLabels.instance }}",
+  "agent_type": "{{ .CommonLabels.agent_type }}",
+  "runbook_url": "{{ .CommonAnnotations.runbook_url }}",
+  "firing_alerts": {{ len .Alerts.Firing }},
+  "resolved_alerts": {{ len .Alerts.Resolved }},
+  "generated_at": "{{ now.Format "2006-01-02T15:04:05Z07:00" }}"
+}
+{{ end }}
+
+{{ define "teams.gemini.title" }}{{ template "__alert_severity_prefix" . }} {{ .Labels.alertname }}{{ if .Labels.service }} - {{ .Labels.service }}{{ end }}{{ end }}
+
+{{ define "teams.gemini.text" }}
+{{ if gt (len .Alerts.Firing) 0 }}
+**🔥 FIRING ALERTS**
+{{ range .Alerts.Firing }}
+
+**{{ .Annotations.summary }}**
+
+{{ .Annotations.description }}
+
+**Service:** {{ .Labels.service }}  
+**Severity:** {{ .Labels.severity }}  
+**Team:** {{ .Labels.team }}  
+{{ if .Labels.instance }}**Instance:** {{ .Labels.instance }}{{ end }}
+{{ if .Labels.agent_type }}**Agent Type:** {{ .Labels.agent_type }}{{ end }}
+
+{{ if .Annotations.runbook_url }}[📖 Runbook]({{ .Annotations.runbook_url }}){{ end }}
+
+---
+{{ end }}
+{{ end }}
+
+{{ if gt (len .Alerts.Resolved) 0 }}
+**✅ RESOLVED ALERTS**
+{{ range .Alerts.Resolved }}
+• **{{ .Annotations.summary }}** - Duration: {{ .EndsAt.Sub .StartsAt }}
+{{ end }}
+{{ end }}
+{{ end }}

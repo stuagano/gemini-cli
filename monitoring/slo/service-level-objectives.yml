@@ -1,0 +1,414 @@
+# Service Level Objectives (SLOs) for Gemini Enterprise Architect
+# Defines measurable service level targets for operational excellence
+
+apiVersion: sloth.slok.dev/v1
+kind: PrometheusServiceLevel
+metadata:
+  name: gemini-agent-server-slo
+  namespace: gemini-monitoring
+  labels:
+    team: platform
+    service: agent-server
+spec:
+  service: "gemini-agent-server"
+  labels:
+    team: platform
+    environment: production
+  slos:
+  
+  # Agent Response Time SLO
+  - name: "agent-response-time"
+    objective: 99.5
+    description: "99.5% of agent requests should complete within 2 seconds"
+    sli:
+      events:
+        error_query: sum(rate(gemini_agent_response_time_seconds_bucket{le="2.0"}[5m])) by (agent_type)
+        total_query: sum(rate(gemini_agent_response_time_seconds_count[5m])) by (agent_type)
+    alerting:
+      name: GeminiAgentResponseTimeSLO
+      labels:
+        severity: warning
+        team: platform
+      annotations:
+        summary: "Agent response time SLO breach"
+        description: "Agent {{ $labels.agent_type }} response time SLO is below target"
+        runbook_url: "https://docs.gemini.ai/runbooks/agent-response-time-slo"
+      page_alert:
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Agent response time SLO critical breach"
+          description: "Agent {{ $labels.agent_type }} response time SLO is critically below target"
+
+  # Agent Availability SLO
+  - name: "agent-availability"
+    objective: 99.9
+    description: "99.9% of agent requests should succeed"
+    sli:
+      events:
+        error_query: sum(rate(gemini_agent_requests_total{status!="success"}[5m])) by (agent_type)
+        total_query: sum(rate(gemini_agent_requests_total[5m])) by (agent_type)
+    alerting:
+      name: GeminiAgentAvailabilitySLO
+      labels:
+        severity: warning
+        team: platform
+      annotations:
+        summary: "Agent availability SLO breach"
+        description: "Agent {{ $labels.agent_type }} availability is below 99.9%"
+        runbook_url: "https://docs.gemini.ai/runbooks/agent-availability-slo"
+
+---
+apiVersion: sloth.slok.dev/v1
+kind: PrometheusServiceLevel
+metadata:
+  name: gemini-scout-indexer-slo
+  namespace: gemini-monitoring
+  labels:
+    team: intelligence
+    service: scout
+spec:
+  service: "gemini-scout-indexer"
+  labels:
+    team: intelligence
+    environment: production
+  slos:
+  
+  # Scout Indexing Success Rate SLO
+  - name: "scout-indexing-success"
+    objective: 99.0
+    description: "99% of file indexing operations should succeed"
+    sli:
+      events:
+        error_query: sum(rate(gemini_scout_files_indexed_total{status!="success"}[5m]))
+        total_query: sum(rate(gemini_scout_files_indexed_total[5m]))
+    alerting:
+      name: GeminiScoutIndexingSLO
+      labels:
+        severity: warning
+        team: intelligence
+      annotations:
+        summary: "Scout indexing success rate SLO breach"
+        description: "Scout indexing success rate is below 99%"
+        runbook_url: "https://docs.gemini.ai/runbooks/scout-indexing-slo"
+
+  # Scout Processing Time SLO
+  - name: "scout-processing-time"
+    objective: 95.0
+    description: "95% of files should be processed within 1 second"
+    sli:
+      events:
+        error_query: sum(rate(gemini_scout_processing_time_seconds_bucket{le="1.0"}[5m]))
+        total_query: sum(rate(gemini_scout_processing_time_seconds_count[5m]))
+    alerting:
+      name: GeminiScoutProcessingTimeSLO
+      labels:
+        severity: warning
+        team: intelligence
+      annotations:
+        summary: "Scout processing time SLO breach"
+        description: "Scout processing time is above target"
+
+  # Scout Duplicate Detection Accuracy SLO
+  - name: "scout-detection-accuracy"
+    objective: 95.0
+    description: "Scout should maintain 95% duplicate detection accuracy"
+    sli:
+      events:
+        error_query: gemini_scout_duplicate_detection_accuracy_percent >= 95
+        total_query: "1"
+    alerting:
+      name: GeminiScoutAccuracySLO
+      labels:
+        severity: warning
+        team: intelligence
+      annotations:
+        summary: "Scout detection accuracy SLO breach"
+        description: "Scout duplicate detection accuracy is below 95%"
+
+---
+apiVersion: sloth.slok.dev/v1
+kind: PrometheusServiceLevel
+metadata:
+  name: gemini-guardian-validator-slo
+  namespace: gemini-monitoring
+  labels:
+    team: security
+    service: guardian
+spec:
+  service: "gemini-guardian-validator"
+  labels:
+    team: security
+    environment: production
+  slos:
+  
+  # Guardian Validation Success Rate SLO
+  - name: "guardian-validation-success"
+    objective: 99.5
+    description: "99.5% of validation operations should succeed"
+    sli:
+      events:
+        error_query: sum(rate(gemini_guardian_validations_total{status!="success"}[5m])) by (validation_type)
+        total_query: sum(rate(gemini_guardian_validations_total[5m])) by (validation_type)
+    alerting:
+      name: GeminiGuardianValidationSLO
+      labels:
+        severity: warning
+        team: security
+      annotations:
+        summary: "Guardian validation success rate SLO breach"
+        description: "Guardian {{ $labels.validation_type }} validation success rate is below 99.5%"
+
+  # Guardian Response Time SLO
+  - name: "guardian-response-time"
+    objective: 98.0
+    description: "98% of validations should complete within 5 seconds"
+    sli:
+      events:
+        error_query: sum(rate(gemini_guardian_validation_time_seconds_bucket{le="5.0"}[5m])) by (validation_type)
+        total_query: sum(rate(gemini_guardian_validation_time_seconds_count[5m])) by (validation_type)
+    alerting:
+      name: GeminiGuardianResponseTimeSLO
+      labels:
+        severity: warning
+        team: security
+      annotations:
+        summary: "Guardian validation time SLO breach"
+        description: "Guardian {{ $labels.validation_type }} validation time is above target"
+
+---
+apiVersion: sloth.slok.dev/v1
+kind: PrometheusServiceLevel
+metadata:
+  name: gemini-killer-demo-slo
+  namespace: gemini-monitoring
+  labels:
+    team: optimization
+    service: killer-demo
+spec:
+  service: "gemini-killer-demo"
+  labels:
+    team: optimization
+    environment: production
+  slos:
+  
+  # Killer Demo Detection Accuracy SLO
+  - name: "killer-demo-accuracy"
+    objective: 90.0
+    description: "Killer Demo should maintain 90% scaling issue detection accuracy"
+    sli:
+      events:
+        error_query: gemini_killer_demo_detection_accuracy_percent >= 90
+        total_query: "1"
+    alerting:
+      name: GeminiKillerDemoAccuracySLO
+      labels:
+        severity: warning
+        team: optimization
+      annotations:
+        summary: "Killer Demo accuracy SLO breach"
+        description: "Killer Demo detection accuracy is below 90%"
+
+  # False Positive Rate SLO
+  - name: "killer-demo-false-positive-rate"
+    objective: 85.0
+    description: "Killer Demo false positive rate should be below 15%"
+    sli:
+      events:
+        error_query: gemini_killer_demo_false_positive_rate_percent <= 15
+        total_query: "1"
+    alerting:
+      name: GeminiKillerDemoFalsePositiveSLO
+      labels:
+        severity: warning
+        team: optimization
+      annotations:
+        summary: "Killer Demo false positive rate SLO breach"
+        description: "Killer Demo false positive rate is above 15%"
+
+---
+apiVersion: sloth.slok.dev/v1
+kind: PrometheusServiceLevel
+metadata:
+  name: gemini-knowledge-base-slo
+  namespace: gemini-monitoring
+  labels:
+    team: intelligence
+    service: knowledge-base
+spec:
+  service: "gemini-knowledge-base"
+  labels:
+    team: intelligence
+    environment: production
+  slos:
+  
+  # Knowledge Query Success Rate SLO
+  - name: "knowledge-query-success"
+    objective: 99.0
+    description: "99% of knowledge base queries should succeed"
+    sli:
+      events:
+        error_query: sum(rate(gemini_knowledge_queries_total{status!="success"}[5m])) by (query_type)
+        total_query: sum(rate(gemini_knowledge_queries_total[5m])) by (query_type)
+    alerting:
+      name: GeminiKnowledgeQuerySLO
+      labels:
+        severity: warning
+        team: intelligence
+      annotations:
+        summary: "Knowledge base query success rate SLO breach"
+        description: "Knowledge base {{ $labels.query_type }} query success rate is below 99%"
+
+  # Knowledge Query Response Time SLO
+  - name: "knowledge-query-response-time"
+    objective: 95.0
+    description: "95% of knowledge queries should complete within 3 seconds"
+    sli:
+      events:
+        error_query: sum(rate(gemini_knowledge_query_duration_seconds_bucket{le="3.0"}[5m])) by (query_type)
+        total_query: sum(rate(gemini_knowledge_query_duration_seconds_count[5m])) by (query_type)
+    alerting:
+      name: GeminiKnowledgeResponseTimeSLO
+      labels:
+        severity: warning
+        team: intelligence
+      annotations:
+        summary: "Knowledge base response time SLO breach"
+        description: "Knowledge base {{ $labels.query_type }} response time is above target"
+
+---
+apiVersion: sloth.slok.dev/v1
+kind: PrometheusServiceLevel
+metadata:
+  name: gemini-system-infrastructure-slo
+  namespace: gemini-monitoring
+  labels:
+    team: platform
+    service: infrastructure
+spec:
+  service: "gemini-infrastructure"
+  labels:
+    team: platform
+    environment: production
+  slos:
+  
+  # System Uptime SLO
+  - name: "system-uptime"
+    objective: 99.95
+    description: "99.95% system uptime (maximum 4.38 hours downtime per year)"
+    sli:
+      events:
+        error_query: up{job=~"gemini-.*"} == 0
+        total_query: up{job=~"gemini-.*"}
+    alerting:
+      name: GeminiSystemUptimeSLO
+      labels:
+        severity: critical
+        team: platform
+      annotations:
+        summary: "System uptime SLO breach"
+        description: "System uptime is below 99.95%"
+        runbook_url: "https://docs.gemini.ai/runbooks/system-uptime-slo"
+
+  # Database Availability SLO
+  - name: "database-availability"
+    objective: 99.9
+    description: "99.9% database availability"
+    sli:
+      events:
+        error_query: up{job="postgresql"} == 0
+        total_query: up{job="postgresql"}
+    alerting:
+      name: GeminiDatabaseAvailabilitySLO
+      labels:
+        severity: critical
+        team: platform
+      annotations:
+        summary: "Database availability SLO breach"
+        description: "Database availability is below 99.9%"
+
+  # API Gateway Response Time SLO
+  - name: "api-gateway-response-time"
+    objective: 99.0
+    description: "99% of API requests should complete within 500ms"
+    sli:
+      events:
+        error_query: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job="nginx"}[5m])) by (le)) <= 0.5
+        total_query: "1"
+    alerting:
+      name: GeminiAPIGatewayResponseTimeSLO
+      labels:
+        severity: warning
+        team: platform
+      annotations:
+        summary: "API Gateway response time SLO breach"
+        description: "API Gateway 99th percentile response time is above 500ms"
+
+---
+# Business-Level SLOs
+apiVersion: sloth.slok.dev/v1
+kind: PrometheusServiceLevel
+metadata:
+  name: gemini-business-impact-slo
+  namespace: gemini-monitoring
+  labels:
+    team: business
+    service: business-metrics
+spec:
+  service: "gemini-business-impact"
+  labels:
+    team: business
+    environment: production
+  slos:
+  
+  # Cost Optimization Effectiveness SLO
+  - name: "cost-optimization-effectiveness"
+    objective: 80.0
+    description: "80% of optimization recommendations should result in measurable cost savings"
+    sli:
+      events:
+        error_query: rate(gemini_optimization_recommendations_implemented_total[24h])
+        total_query: rate(gemini_optimization_recommendations_total[24h])
+    alerting:
+      name: GeminiCostOptimizationSLO
+      labels:
+        severity: info
+        team: optimization
+      annotations:
+        summary: "Cost optimization effectiveness SLO breach"
+        description: "Cost optimization effectiveness is below 80%"
+
+  # Developer Productivity SLO
+  - name: "developer-productivity"
+    objective: 75.0
+    description: "Maintain developer productivity of at least 75% of baseline"
+    sli:
+      events:
+        error_query: avg(gemini_developer_productivity_requests_per_hour) >= (avg(gemini_developer_productivity_baseline_requests_per_hour) * 0.75)
+        total_query: "1"
+    alerting:
+      name: GeminiDeveloperProductivitySLO
+      labels:
+        severity: warning
+        team: business
+      annotations:
+        summary: "Developer productivity SLO breach"
+        description: "Developer productivity is below 75% of baseline"
+
+  # Time to Resolution SLO
+  - name: "time-to-resolution"
+    objective: 90.0
+    description: "90% of scaling issues should be resolved within 24 hours"
+    sli:
+      events:
+        error_query: sum(rate(gemini_scaling_issues_resolved_within_24h_total[5m]))
+        total_query: sum(rate(gemini_scaling_issues_detected_total[5m]))
+    alerting:
+      name: GeminiTimeToResolutionSLO
+      labels:
+        severity: warning
+        team: optimization
+      annotations:
+        summary: "Time to resolution SLO breach"
+        description: "Time to resolution for scaling issues is above 24 hours"

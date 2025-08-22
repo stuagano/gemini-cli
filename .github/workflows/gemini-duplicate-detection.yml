@@ -1,0 +1,535 @@
+name: 'Scout: Duplicate Code Detection'
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, develop]
+  
+  push:
+    branches: [main, develop]
+  
+  schedule:
+    # Run full scan daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  
+  workflow_dispatch:
+    inputs:
+      similarity_threshold:
+        description: 'Similarity threshold (0.0-1.0)'
+        required: false
+        default: '0.8'
+        type: string
+      full_scan:
+        description: 'Perform full project scan'
+        required: false
+        default: false
+        type: boolean
+      max_duplicates:
+        description: 'Maximum duplicates to report'
+        required: false
+        default: '50'
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  statuses: write
+
+env:
+  PYTHON_VERSION: '3.11'
+  AGENT_SERVER_PORT: 8000
+
+jobs:
+  # Start Scout indexer and agent server
+  setup-scout:
+    name: 'Setup Scout Infrastructure'
+    runs-on: ubuntu-latest
+    outputs:
+      server-url: ${{ steps.server.outputs.url }}
+      indexer-ready: ${{ steps.indexer.outputs.ready }}
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: 'Setup Python'
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: 'Cache Scout index'
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.scout-index
+            .scout/
+          key: scout-index-${{ runner.os }}-${{ hashFiles('**/*.py', '**/*.js', '**/*.ts', '**/*.java', '**/*.go') }}
+          restore-keys: |
+            scout-index-${{ runner.os }}-
+      
+      - name: 'Install dependencies'
+        run: |
+          pip install -r requirements.txt
+          pip install tree-sitter tree-sitter-python tree-sitter-javascript
+      
+      - name: 'Start agent server with Scout'
+        id: server
+        run: |
+          cd src
+          export BMAD_PROJECT_ROOT="${{ github.workspace }}"
+          python start_server.py &
+          SERVER_PID=$!
+          echo "server_pid=$SERVER_PID" >> $GITHUB_OUTPUT
+          echo "url=http://localhost:${{ env.AGENT_SERVER_PORT }}" >> $GITHUB_OUTPUT
+          
+          # Wait for server to start
+          timeout=60
+          while ! curl -s "http://localhost:${{ env.AGENT_SERVER_PORT }}/api/v1/health" > /dev/null; do
+            sleep 2
+            timeout=$((timeout - 2))
+            if [ $timeout -le 0 ]; then
+              echo "❌ Agent server failed to start"
+              exit 1
+            fi
+          done
+          echo "✅ Agent server started"
+      
+      - name: 'Initialize Scout indexer'
+        id: indexer
+        run: |
+          echo "🔍 Initializing Scout indexer..."
+          
+          # Trigger Scout reindex
+          REINDEX_RESPONSE=$(curl -s -X POST "http://localhost:${{ env.AGENT_SERVER_PORT }}/api/v1/scout/reindex")
+          echo "Reindex response: $REINDEX_RESPONSE"
+          
+          # Wait for indexing to complete
+          echo "⏳ Waiting for indexing to complete..."
+          sleep 30
+          
+          # Check Scout stats
+          STATS_RESPONSE=$(curl -s "http://localhost:${{ env.AGENT_SERVER_PORT }}/api/v1/scout/stats")
+          echo "Scout stats: $STATS_RESPONSE"
+          
+          INDEXED_FILES=$(echo "$STATS_RESPONSE" | jq -r '.total_files // 0')
+          INDEXED_FUNCTIONS=$(echo "$STATS_RESPONSE" | jq -r '.total_functions // 0')
+          
+          echo "📊 Scout Index Status:"
+          echo "  Files indexed: $INDEXED_FILES"
+          echo "  Functions indexed: $INDEXED_FUNCTIONS"
+          
+          if [ "$INDEXED_FILES" -gt 0 ]; then
+            echo "ready=true" >> $GITHUB_OUTPUT
+            echo "✅ Scout indexer is ready"
+          else
+            echo "ready=false" >> $GITHUB_OUTPUT
+            echo "❌ Scout indexer failed to index files"
+            exit 1
+          fi
+      
+      - name: 'Keep infrastructure running'
+        run: |
+          # Keep server and indexer running for dependent jobs
+          tail -f /dev/null &
+
+  # Detect duplicates in changed files
+  detect-pr-duplicates:
+    name: 'Detect PR Duplicates'
+    runs-on: ubuntu-latest
+    needs: setup-scout
+    if: github.event_name == 'pull_request'
+    outputs:
+      duplicates-found: ${{ steps.detection.outputs.count }}
+      high-similarity: ${{ steps.detection.outputs.high_similarity }}
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: 'Get changed files'
+        id: changed-files
+        uses: tj-actions/changed-files@v40
+        with:
+          files: |
+            **/*.py
+            **/*.js
+            **/*.ts
+            **/*.jsx
+            **/*.tsx
+            **/*.java
+            **/*.go
+            **/*.rs
+            **/*.cpp
+            **/*.c
+            **/*.h
+          separator: ','
+      
+      - name: 'Scout duplicate detection for PR files'
+        id: detection
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          echo "🔍 Running Scout duplicate detection for PR files..."
+          
+          SIMILARITY_THRESHOLD="${{ github.event.inputs.similarity_threshold || '0.8' }}"
+          
+          # Get duplicates from Scout
+          DUPLICATES_RESPONSE=$(curl -s "${{ needs.setup-scout.outputs.server-url }}/api/v1/scout/duplicates?similarity_threshold=$SIMILARITY_THRESHOLD")
+          
+          echo "$DUPLICATES_RESPONSE" > duplicates_raw.json
+          
+          # Filter duplicates involving changed files
+          CHANGED_FILES="${{ steps.changed-files.outputs.all_changed_files }}"
+          
+          python3 << EOF
+          import json
+          
+          # Load duplicates
+          with open('duplicates_raw.json') as f:
+              data = json.load(f)
+          
+          duplicates = data.get('duplicates', [])
+          changed_files = "$CHANGED_FILES".split(',')
+          
+          # Filter duplicates involving changed files
+          relevant_duplicates = []
+          for dup in duplicates:
+              if any(changed_file in dup.get('original_file', '') or changed_file in dup.get('duplicate_file', '') for changed_file in changed_files):
+                  relevant_duplicates.append(dup)
+          
+          # Calculate metrics
+          total_duplicates = len(relevant_duplicates)
+          high_similarity = len([d for d in relevant_duplicates if d.get('similarity_score', 0) > 0.9])
+          
+          # Save filtered results
+          filtered_data = {
+              'duplicates': relevant_duplicates,
+              'total_count': total_duplicates,
+              'high_similarity_count': high_similarity,
+              'similarity_threshold': float("$SIMILARITY_THRESHOLD"),
+              'changed_files': changed_files,
+              'analysis_type': 'pr_focused'
+          }
+          
+          with open('pr_duplicates.json', 'w') as f:
+              json.dump(filtered_data, f, indent=2)
+          
+          print(f"Total relevant duplicates: {total_duplicates}")
+          print(f"High similarity (>0.9): {high_similarity}")
+          EOF
+          
+          DUPLICATES_COUNT=$(python3 -c "import json; print(json.load(open('pr_duplicates.json'))['total_count'])")
+          HIGH_SIMILARITY=$(python3 -c "import json; print(json.load(open('pr_duplicates.json'))['high_similarity_count'])")
+          
+          echo "count=$DUPLICATES_COUNT" >> $GITHUB_OUTPUT
+          echo "high_similarity=$HIGH_SIMILARITY" >> $GITHUB_OUTPUT
+          
+          echo "📊 PR Duplicate Detection Results:"
+          echo "  Relevant duplicates: $DUPLICATES_COUNT"
+          echo "  High similarity: $HIGH_SIMILARITY"
+      
+      - name: 'Upload PR duplicate results'
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/upload-artifact@v3
+        with:
+          name: pr-duplicate-results
+          path: pr_duplicates.json
+
+  # Comprehensive project duplicate scan
+  full-duplicate-scan:
+    name: 'Full Project Duplicate Scan'
+    runs-on: ubuntu-latest
+    needs: setup-scout
+    if: github.event.inputs.full_scan == 'true' || github.event_name == 'schedule' || github.event_name == 'push'
+    outputs:
+      total-duplicates: ${{ steps.scan.outputs.total }}
+      critical-duplicates: ${{ steps.scan.outputs.critical }}
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+      
+      - name: 'Full project duplicate scan'
+        id: scan
+        run: |
+          echo "🔍 Running full project duplicate scan..."
+          
+          SIMILARITY_THRESHOLD="${{ github.event.inputs.similarity_threshold || '0.8' }}"
+          MAX_DUPLICATES="${{ github.event.inputs.max_duplicates || '50' }}"
+          
+          # Get all duplicates from Scout
+          DUPLICATES_RESPONSE=$(curl -s "${{ needs.setup-scout.outputs.server-url }}/api/v1/scout/duplicates?similarity_threshold=$SIMILARITY_THRESHOLD")
+          
+          echo "$DUPLICATES_RESPONSE" > full_duplicates.json
+          
+          # Analyze duplicate patterns
+          python3 << EOF
+          import json
+          from collections import defaultdict
+          
+          with open('full_duplicates.json') as f:
+              data = json.load(f)
+          
+          duplicates = data.get('duplicates', [])
+          
+          # Analyze patterns
+          duplicate_patterns = defaultdict(list)
+          file_duplicate_counts = defaultdict(int)
+          
+          for dup in duplicates:
+              pattern = dup.get('function_name', 'unknown')
+              duplicate_patterns[pattern].append(dup)
+              file_duplicate_counts[dup.get('original_file', '')] += 1
+              file_duplicate_counts[dup.get('duplicate_file', '')] += 1
+          
+          # Find most problematic files
+          problematic_files = sorted(file_duplicate_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+          
+          # Calculate metrics
+          total_duplicates = len(duplicates)
+          critical_duplicates = len([d for d in duplicates if d.get('similarity_score', 0) > 0.95])
+          
+          # Generate analysis report
+          analysis = {
+              'total_duplicates': total_duplicates,
+              'critical_duplicates': critical_duplicates,
+              'duplicate_patterns': dict(duplicate_patterns),
+              'problematic_files': problematic_files,
+              'similarity_threshold': float("$SIMILARITY_THRESHOLD"),
+              'most_duplicated_functions': sorted(
+                  [(pattern, len(dups)) for pattern, dups in duplicate_patterns.items()],
+                  key=lambda x: x[1], reverse=True
+              )[:10]
+          }
+          
+          with open('duplicate_analysis.json', 'w') as f:
+              json.dump(analysis, f, indent=2)
+          
+          print(f"Total duplicates: {total_duplicates}")
+          print(f"Critical duplicates (>95% similarity): {critical_duplicates}")
+          EOF
+          
+          TOTAL_DUPLICATES=$(python3 -c "import json; print(json.load(open('duplicate_analysis.json'))['total_duplicates'])")
+          CRITICAL_DUPLICATES=$(python3 -c "import json; print(json.load(open('duplicate_analysis.json'))['critical_duplicates'])")
+          
+          echo "total=$TOTAL_DUPLICATES" >> $GITHUB_OUTPUT
+          echo "critical=$CRITICAL_DUPLICATES" >> $GITHUB_OUTPUT
+          
+          echo "📊 Full Project Duplicate Scan Results:"
+          echo "  Total duplicates: $TOTAL_DUPLICATES"
+          echo "  Critical duplicates: $CRITICAL_DUPLICATES"
+      
+      - name: 'Upload full scan results'
+        uses: actions/upload-artifact@v3
+        with:
+          name: full-duplicate-scan-results
+          path: |
+            full_duplicates.json
+            duplicate_analysis.json
+
+  # Generate duplicate prevention report
+  duplicate-report:
+    name: 'Generate Duplicate Report'
+    runs-on: ubuntu-latest
+    needs: [detect-pr-duplicates, full-duplicate-scan]
+    if: always() && !cancelled()
+    steps:
+      - name: 'Download analysis results'
+        uses: actions/download-artifact@v3
+        with:
+          path: duplicate-results
+      
+      - name: 'Generate comprehensive duplicate report'
+        id: report
+        run: |
+          echo "📋 Generating Scout duplicate prevention report..."
+          
+          # Get metrics from previous jobs
+          PR_DUPLICATES=${{ needs.detect-pr-duplicates.outputs.duplicates-found || '0' }}
+          PR_HIGH_SIM=${{ needs.detect-pr-duplicates.outputs.high-similarity || '0' }}
+          TOTAL_DUPLICATES=${{ needs.full-duplicate-scan.outputs.total-duplicates || '0' }}
+          CRITICAL_DUPLICATES=${{ needs.full-duplicate-scan.outputs.critical-duplicates || '0' }}
+          
+          # Calculate duplication health score (0-100, higher is better)
+          if [ "$TOTAL_DUPLICATES" -eq 0 ]; then
+            HEALTH_SCORE=100
+          else
+            # Score based on number of duplicates and their severity
+            HEALTH_SCORE=$((100 - (CRITICAL_DUPLICATES * 20) - ((TOTAL_DUPLICATES - CRITICAL_DUPLICATES) * 5)))
+            HEALTH_SCORE=$(echo "$HEALTH_SCORE" | awk '{print ($1 < 0) ? 0 : $1}')
+          fi
+          
+          # Determine if PR introduces new duplicates
+          NEW_DUPLICATES_DETECTED="false"
+          if [ "$PR_DUPLICATES" -gt 0 ]; then
+            NEW_DUPLICATES_DETECTED="true"
+          fi
+          
+          echo "pr_duplicates=$PR_DUPLICATES" >> $GITHUB_OUTPUT
+          echo "total_duplicates=$TOTAL_DUPLICATES" >> $GITHUB_OUTPUT
+          echo "critical_duplicates=$CRITICAL_DUPLICATES" >> $GITHUB_OUTPUT
+          echo "health_score=$HEALTH_SCORE" >> $GITHUB_OUTPUT
+          echo "new_duplicates=$NEW_DUPLICATES_DETECTED" >> $GITHUB_OUTPUT
+          
+          # Create detailed report
+          cat > duplicate_report.md << EOF
+          # 🔍 Scout: Duplicate Code Prevention Report
+          
+          ## 📊 Duplication Health Score: $HEALTH_SCORE/100
+          
+          $(if [ "$HEALTH_SCORE" -ge 80 ]; then echo "✅ **Excellent**: Low code duplication"; elif [ "$HEALTH_SCORE" -ge 60 ]; then echo "🟡 **Good**: Moderate duplication levels"; elif [ "$HEALTH_SCORE" -ge 40 ]; then echo "🟠 **Warning**: High duplication detected"; else echo "🔴 **Critical**: Severe duplication issues"; fi)
+          
+          ## 📈 Current Status
+          
+          ### PR Analysis
+          - **Duplicates in PR**: $PR_DUPLICATES
+          - **High Similarity (>90%)**: $PR_HIGH_SIM
+          - **New Duplicates Introduced**: $(if [ "$NEW_DUPLICATES_DETECTED" = "true" ]; then echo "Yes ⚠️"; else echo "No ✅"; fi)
+          
+          ### Project Overview
+          - **Total Project Duplicates**: $TOTAL_DUPLICATES
+          - **Critical Duplicates (>95%)**: $CRITICAL_DUPLICATES
+          - **Duplication Trend**: $(if [ "$TOTAL_DUPLICATES" -lt 10 ]; then echo "Low 📉"; elif [ "$TOTAL_DUPLICATES" -lt 50 ]; then echo "Moderate 📊"; else echo "High 📈"; fi)
+          
+          ## 🎯 Recommendations
+          EOF
+          
+          if [ "$NEW_DUPLICATES_DETECTED" = "true" ]; then
+            echo "- 🚨 **Action Required**: This PR introduces duplicate code. Consider refactoring." >> duplicate_report.md
+            echo "- 💡 **Suggestion**: Extract common functionality into shared utilities." >> duplicate_report.md
+          fi
+          
+          if [ "$CRITICAL_DUPLICATES" -gt 0 ]; then
+            echo "- 🔴 **Critical**: $CRITICAL_DUPLICATES functions have >95% similarity. Immediate refactoring recommended." >> duplicate_report.md
+          fi
+          
+          if [ "$TOTAL_DUPLICATES" -gt 20 ]; then
+            echo "- 🟠 **Project Health**: Consider implementing a refactoring sprint to reduce duplication." >> duplicate_report.md
+          fi
+          
+          if [ "$TOTAL_DUPLICATES" -eq 0 ]; then
+            echo "- 🎉 **Excellent**: No duplicates detected! Keep up the great work." >> duplicate_report.md
+          fi
+          
+          echo "" >> duplicate_report.md
+          echo "## 🛠️ Scout Features" >> duplicate_report.md
+          echo "- **Real-time Detection**: Duplicates detected in PR changes" >> duplicate_report.md
+          echo "- **Similarity Analysis**: Advanced code similarity algorithms" >> duplicate_report.md
+          echo "- **Prevention Focus**: Stop duplicates before they reach main branch" >> duplicate_report.md
+          
+          echo "Report generated: duplicate_report.md"
+      
+      - name: 'Create Scout PR comment'
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('duplicate_report.md', 'utf8');
+            
+            const prDuplicates = ${{ steps.report.outputs.pr_duplicates }};
+            const healthScore = ${{ steps.report.outputs.health_score }};
+            const newDuplicates = ${{ steps.report.outputs.new_duplicates }};
+            
+            let commentBody = `## 🔍 Scout: Duplicate Code Detection\n\n`;
+            
+            // Add health badge
+            const healthBadge = healthScore >= 80 ? '🟢 HEALTHY' : 
+                               healthScore >= 60 ? '🟡 MODERATE' : 
+                               healthScore >= 40 ? '🟠 WARNING' : '🔴 CRITICAL';
+            
+            commentBody += `**Code Health**: ${healthBadge} (${healthScore}/100)\n\n`;
+            
+            if (newDuplicates === 'true') {
+              commentBody += `🚨 **Duplicate Alert**: This PR introduces ${prDuplicates} potential code duplicates.\n\n`;
+              commentBody += `**Action Required**: Please review and consider refactoring to avoid code duplication.\n\n`;
+            } else if (prDuplicates > 0) {
+              commentBody += `ℹ️ **Info**: ${prDuplicates} existing duplicates detected in modified areas.\n\n`;
+            } else {
+              commentBody += `✅ **Great!** No duplicate code detected in this PR.\n\n`;
+            }
+            
+            commentBody += report;
+            
+            // Add refactoring suggestions for high duplication
+            if (newDuplicates === 'true') {
+              commentBody += `\n\n### 💡 Refactoring Suggestions\n`;
+              commentBody += `1. **Extract Common Logic**: Move duplicated code to shared utilities\n`;
+              commentBody += `2. **Create Base Classes**: Use inheritance for similar functionality\n`;
+              commentBody += `3. **Implement Mixins**: Use composition for cross-cutting concerns\n`;
+              commentBody += `4. **Configuration-Driven**: Replace similar code with configuration\n`;
+            }
+            
+            commentBody += `\n\n---\n*Scout duplicate prevention powered by Gemini Enterprise Architect*`;
+            
+            // Update or create comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const existingComment = comments.data.find(comment => 
+              comment.body.includes('🔍 Scout: Duplicate Code Detection')
+            );
+            
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: commentBody
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+      
+      - name: 'Set duplicate check status'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const newDuplicates = '${{ steps.report.outputs.new_duplicates }}';
+            const prDuplicates = ${{ steps.report.outputs.pr_duplicates }};
+            const healthScore = ${{ steps.report.outputs.health_score }};
+            
+            const state = newDuplicates === 'true' ? 'failure' : 'success';
+            const description = newDuplicates === 'true' 
+              ? `${prDuplicates} new duplicates introduced`
+              : prDuplicates > 0 
+                ? `${prDuplicates} existing duplicates in modified areas`
+                : 'No duplicate code detected';
+            
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: state,
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: description,
+              context: 'gemini/scout-duplicates'
+            });
+      
+      - name: 'Upload duplicate report'
+        uses: actions/upload-artifact@v3
+        with:
+          name: scout-duplicate-report
+          path: |
+            duplicate_report.md
+            duplicate-results/
+          retention-days: 30
+      
+      - name: 'Fail on new duplicates'
+        if: steps.report.outputs.new_duplicates == 'true'
+        run: |
+          echo "❌ SCOUT PREVENTION: New duplicate code detected in PR!"
+          echo "::error::Duplicate code introduces technical debt and maintenance overhead"
+          echo "Please refactor to eliminate duplication before merging"
+          exit 1

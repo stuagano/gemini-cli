@@ -1,0 +1,150 @@
+# Branch Protection Rules for Gemini Enterprise Architect
+# Apply these rules to main/master branches where the GitHub App is installed
+
+branch_protection_rules:
+  # Main branch protection
+  main:
+    required_status_checks:
+      strict: true
+      contexts:
+        - "gemini/killer-demo-scaling"      # Killer demo scaling analysis
+        - "gemini/scout-duplicates"         # Scout duplicate detection
+        - "gemini/code-review"              # AI-powered code review
+        - "gemini/full-analysis"            # Comprehensive multi-agent analysis
+        - "continuous-integration"         # Existing CI checks
+    
+    enforce_admins: true
+    required_pull_request_reviews:
+      required_approving_review_count: 2
+      dismiss_stale_reviews: true
+      require_code_owner_reviews: true
+      require_last_push_approval: true
+    
+    restrictions:
+      users: []
+      teams: []
+      apps: []
+    
+    required_linear_history: true
+    allow_force_pushes: false
+    allow_deletions: false
+    
+    # Gemini-specific requirements
+    block_creations: false
+    required_conversation_resolution: true
+
+  # Development branch protection (lighter rules)
+  develop:
+    required_status_checks:
+      strict: false
+      contexts:
+        - "gemini/scaling-check"
+        - "gemini/duplicate-detection"
+    
+    enforce_admins: false
+    required_pull_request_reviews:
+      required_approving_review_count: 1
+      dismiss_stale_reviews: false
+      require_code_owner_reviews: false
+    
+    allow_force_pushes: true
+    allow_deletions: false
+
+# Quality gates configuration
+quality_gates:
+  # Killer demo scaling analysis
+  scaling_analysis:
+    fail_on_critical: true
+    max_risk_score: 70
+    block_merge_on_failure: true
+    
+  # Scout duplicate detection
+  duplicate_detection:
+    fail_on_new_duplicates: true
+    max_similarity_threshold: 0.95
+    block_merge_on_failure: true
+    
+  # Code review quality
+  code_review:
+    min_score: 70
+    fail_on_security_issues: true
+    block_merge_on_critical: true
+    
+  # Overall quality score
+  overall_quality:
+    min_production_score: 80
+    require_all_agents: true
+    allow_override: false
+
+# Exemptions and overrides
+exemptions:
+  # Emergency hotfix exemption
+  emergency_hotfix:
+    enabled: true
+    required_label: "emergency-hotfix"
+    bypass_checks:
+      - "gemini/killer-demo-scaling"
+      - "gemini/scout-duplicates"
+    notification_channels:
+      - slack: "#alerts"
+      - email: "devops@company.com"
+  
+  # Documentation-only changes
+  docs_only:
+    enabled: true
+    file_patterns:
+      - "docs/**"
+      - "*.md"
+      - "*.txt"
+    bypass_checks:
+      - "gemini/killer-demo-scaling"
+      - "gemini/scout-duplicates"
+  
+  # Configuration-only changes
+  config_only:
+    enabled: true
+    file_patterns:
+      - "*.yml"
+      - "*.yaml"
+      - "*.json"
+      - ".github/**"
+    bypass_checks:
+      - "gemini/killer-demo-scaling"
+
+# Notification configuration
+notifications:
+  on_protection_violation:
+    channels:
+      - github_issue: true
+      - slack: "#dev-alerts"
+      - email: "team@company.com"
+    
+  on_quality_gate_failure:
+    channels:
+      - pr_comment: true
+      - slack: "#code-quality"
+    
+  on_critical_issues:
+    channels:
+      - pr_comment: true
+      - github_issue: true
+      - slack: "#critical-alerts"
+      - email: "leads@company.com"
+
+# Integration settings
+integrations:
+  slack:
+    webhook_url: "${SLACK_WEBHOOK_URL}"
+    channels:
+      alerts: "#alerts"
+      code_quality: "#code-quality"
+      critical: "#critical-alerts"
+  
+  email:
+    smtp_server: "${SMTP_SERVER}"
+    from_address: "gemini-app@company.com"
+  
+  jira:
+    enabled: false
+    server_url: "${JIRA_URL}"
+    project_key: "DEV"

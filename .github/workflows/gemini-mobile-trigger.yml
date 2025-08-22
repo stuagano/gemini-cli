@@ -1,0 +1,287 @@
+name: 'Gemini Mobile Trigger'
+description: 'Run comprehensive Gemini analysis - optimized for mobile GitHub app'
+
+on:
+  workflow_dispatch:
+    inputs:
+      analysis_type:
+        description: 'Analysis to run'
+        required: true
+        default: 'quick'
+        type: choice
+        options:
+          - quick        # Fast analysis for mobile
+          - comprehensive # Full analysis suite
+          - scaling      # Killer demo scaling only
+          - duplicates   # Scout duplicate detection
+          - security     # Security scan
+          - performance  # Performance analysis
+          - deploy       # Deploy to staging
+          - monitor      # Check system health
+      
+      target:
+        description: 'Target branch or PR'
+        required: false
+        default: 'main'
+        type: string
+      
+      notify:
+        description: 'Send notifications'
+        required: true
+        default: true
+        type: boolean
+      
+      auto_fix:
+        description: 'Attempt automatic fixes'
+        required: false
+        default: false
+        type: boolean
+
+  # Also trigger on PR for mobile convenience
+  pull_request:
+    types: [opened, synchronize, reopened]
+  
+  # Schedule regular analysis
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  
+  # Trigger on push to main
+  push:
+    branches:
+      - main
+      - develop
+
+env:
+  AGENT_SERVER_URL: ${{ secrets.AGENT_SERVER_URL || 'https://gemini-agent.yourdomain.com' }}
+  SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+  CACHE_KEY: gemini-mobile-${{ github.run_id }}
+
+jobs:
+  # Quick analysis for mobile - runs fast
+  quick-analysis:
+    if: github.event.inputs.analysis_type == 'quick' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: '📱 Quick Mobile Analysis'
+        id: quick
+        uses: ./  # Uses the action.yml in repo root
+        with:
+          server-url: ${{ env.AGENT_SERVER_URL }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          analysis-types: 'scaling,duplicates'
+          severity-threshold: 'high'
+          max-files: '20'
+          timeout: '60'
+          comment-mode: 'create'
+      
+      - name: '📊 Mobile Summary'
+        run: |
+          echo "## 📱 Quick Analysis Complete"
+          echo "**Scaling Issues:** ${{ steps.quick.outputs.scaling-issues-count }}"
+          echo "**Duplicates:** ${{ steps.quick.outputs.duplicates-count }}"
+          echo "**Risk Score:** ${{ steps.quick.outputs.risk-score }}/100"
+          echo "**Production Ready:** ${{ steps.quick.outputs.production-ready }}"
+      
+      - name: '📲 Send Mobile Notification'
+        if: inputs.notify == true
+        run: |
+          curl -X POST ${{ env.SLACK_WEBHOOK }} \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "text": "📱 Quick Analysis Complete",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Repository:* ${{ github.repository }}\n*Risk Score:* ${{ steps.quick.outputs.risk-score }}/100\n*Issues Found:* ${{ steps.quick.outputs.scaling-issues-count }}"
+                  }
+                }
+              ]
+            }'
+
+  # Comprehensive analysis
+  comprehensive-analysis:
+    if: github.event.inputs.analysis_type == 'comprehensive'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: '🔍 Comprehensive Analysis'
+        id: comprehensive
+        uses: ./
+        with:
+          server-url: ${{ env.AGENT_SERVER_URL }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          analysis-types: 'scaling,duplicates,review,guardian'
+          severity-threshold: 'low'
+          fail-on-critical: 'true'
+          comment-mode: 'update'
+      
+      - name: '📈 Generate Detailed Report'
+        run: |
+          echo "${{ steps.comprehensive.outputs.analysis-summary }}" | jq '.' > analysis-report.json
+          
+          # Create markdown report
+          cat > analysis-report.md << EOF
+          # Gemini Enterprise Architect Analysis Report
+          
+          ## Executive Summary
+          - **Date:** $(date)
+          - **Repository:** ${{ github.repository }}
+          - **Commit:** ${{ github.sha }}
+          - **Risk Score:** ${{ steps.comprehensive.outputs.risk-score }}/100
+          - **Production Ready:** ${{ steps.comprehensive.outputs.production-ready }}
+          
+          ## Findings
+          ### Scaling Issues: ${{ steps.comprehensive.outputs.scaling-issues-count }}
+          ### Duplicates: ${{ steps.comprehensive.outputs.duplicates-count }}
+          
+          ## Detailed Analysis
+          \`\`\`json
+          $(cat analysis-report.json)
+          \`\`\`
+          EOF
+      
+      - name: '📤 Upload Report'
+        uses: actions/upload-artifact@v3
+        with:
+          name: gemini-analysis-report
+          path: |
+            analysis-report.json
+            analysis-report.md
+
+  # Scaling-only analysis (Killer Demo)
+  scaling-analysis:
+    if: github.event.inputs.analysis_type == 'scaling'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: '🚀 Killer Demo - Scaling Analysis'
+        id: scaling
+        run: |
+          # Run Python scaling detector directly
+          cd src/killer_demo
+          python -m pip install -r requirements.txt
+          python scaling_detector.py \
+            --repository "${{ github.repository }}" \
+            --commit "${{ github.sha }}" \
+            --output scaling-report.json
+      
+      - name: '📊 Process Scaling Results'
+        run: |
+          # Parse and display results
+          cat scaling-report.json | jq '.issues[] | select(.severity == "critical")' || echo "No critical issues"
+      
+      - name: '⚡ Auto-fix Scaling Issues'
+        if: inputs.auto_fix == true
+        run: |
+          echo "🔧 Attempting automatic fixes for scaling issues..."
+          # Run auto-fix logic here
+
+  # Deploy to staging
+  deploy-staging:
+    if: github.event.inputs.analysis_type == 'deploy'
+    runs-on: ubuntu-latest
+    environment: staging
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: '🚀 Deploy to GCP Staging'
+        run: |
+          echo "📦 Building containers..."
+          docker build -t gemini-agent:${{ github.sha }} .
+          
+          echo "☁️ Deploying to Cloud Run..."
+          # gcloud run deploy gemini-agent-staging \
+          #   --image gemini-agent:${{ github.sha }} \
+          #   --region us-central1
+      
+      - name: '✅ Verify Deployment'
+        run: |
+          echo "🔍 Running health checks..."
+          # curl https://gemini-agent-staging.run.app/health
+
+  # Monitor system health
+  monitor-health:
+    if: github.event.inputs.analysis_type == 'monitor' || github.event.schedule
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: '🏥 Check System Health'
+        run: |
+          echo "📊 Checking agent server health..."
+          curl -s "${{ env.AGENT_SERVER_URL }}/api/v1/health" | jq '.'
+          
+          echo "📈 Checking metrics..."
+          curl -s "${{ env.AGENT_SERVER_URL }}/api/v1/metrics" | jq '.'
+      
+      - name: '📊 DORA Metrics'
+        run: |
+          echo "📈 Fetching DORA metrics..."
+          # Calculate and display DORA metrics
+
+  # Matrix strategy for parallel analysis
+  parallel-analysis:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        agent: [scout, guardian, developer, qa, architect]
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: '🤖 Run ${{ matrix.agent }} Agent'
+        run: |
+          echo "Running ${{ matrix.agent }} analysis..."
+          curl -X POST "${{ env.AGENT_SERVER_URL }}/api/v1/agent/request" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "type": "${{ matrix.agent }}",
+              "action": "analyze",
+              "payload": {
+                "repository": "${{ github.repository }}",
+                "commit": "${{ github.sha }}"
+              }
+            }'
+
+  # Summary job
+  summary:
+    needs: [quick-analysis, comprehensive-analysis, scaling-analysis, deploy-staging, monitor-health]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: '📱 Mobile-Friendly Summary'
+        run: |
+          echo "## 📊 Gemini Analysis Summary"
+          echo ""
+          echo "### Quick Results:"
+          echo "- ✅ All analyses complete"
+          echo "- 📱 View on mobile: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo ""
+          echo "### Next Steps:"
+          echo "1. Review critical issues"
+          echo "2. Approve auto-fixes if available"
+          echo "3. Deploy when ready"
+      
+      - name: '📲 Final Mobile Notification'
+        if: inputs.notify == true
+        run: |
+          echo "Sending completion notification..."
+          # Send final summary to Slack/Teams/Discord

@@ -1,0 +1,604 @@
+/**
+ * Agent Orchestrator Tests
+ * Comprehensive tests for agent coordination and orchestration
+ */
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import AgentOrchestrator, { AgentTask, WorkflowDefinition, AgentCapability } from './agent-orchestrator.js';
+import { createMockConfig, mockSuccessfulFetch, mockConsole, AsyncTestUtils, AgentTestUtils } from '../test-utils/test-helpers.js';
+import { Config } from '@google/gemini-cli-core';
+
+// Mock dependencies
+vi.mock('ws', () => ({
+  default: vi.fn()
+}));
+
+describe('AgentOrchestrator', () => {
+  let orchestrator: AgentOrchestrator;
+  let mockConfig: Config;
+  let consoleMock: any;
+  let fetchMock: any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockConfig = createMockConfig();
+    consoleMock = mockConsole();
+    fetchMock = mockSuccessfulFetch({
+      agents: [
+        { id: 'scout', status: 'ready', capabilities: ['analyze', 'duplicate_detection'] },
+        { id: 'architect', status: 'ready', capabilities: ['design', 'architecture'] },
+        { id: 'developer', status: 'ready', capabilities: ['implement', 'code'] },
+        { id: 'guardian', status: 'ready', capabilities: ['security', 'validate'] }
+      ]
+    });
+
+    orchestrator = new AgentOrchestrator(mockConfig);
+  });
+
+  afterEach(() => {
+    consoleMock.restore();
+    vi.restoreAllMocks();
+    orchestrator.disconnect();
+  });
+
+  describe('Initialization', () => {
+    it('should initialize with default configuration', () => {
+      expect(orchestrator).toBeDefined();
+      expect(orchestrator.isConnected()).toBe(false);
+    });
+
+    it('should set up event handlers', () => {
+      const spy = vi.spyOn(orchestrator, 'on');
+      new AgentOrchestrator(mockConfig);
+      expect(spy).toHaveBeenCalled();
+    });
+  });
+
+  describe('Agent Discovery', () => {
+    it('should discover available agents', async () => {
+      await orchestrator.connect();
+      const agents = orchestrator.getAvailableAgents();
+      
+      expect(agents).toHaveLength(4);
+      expect(agents.map(a => a.id)).toContain('scout');
+      expect(agents.map(a => a.id)).toContain('architect');
+      expect(agents.map(a => a.id)).toContain('developer');
+      expect(agents.map(a => a.id)).toContain('guardian');
+    });
+
+    it('should handle agent discovery errors gracefully', async () => {
+      fetchMock.mockRejectedValueOnce(new Error('Network error'));
+      
+      await expect(orchestrator.connect()).resolves.not.toThrow();
+      expect(consoleMock.getLogs('warn')).toHaveLength(1);
+    });
+
+    it('should update agent status on discovery', async () => {
+      await orchestrator.connect();
+      
+      const agents = orchestrator.getAvailableAgents();
+      agents.forEach(agent => {
+        expect(agent.status).toBe('ready');
+      });
+    });
+  });
+
+  describe('Single Agent Execution', () => {
+    beforeEach(async () => {
+      await orchestrator.connect();
+    });
+
+    it('should execute single agent request successfully', async () => {
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          result: { code_generated: true, files: ['test.ts'] },
+          execution_time: 1500,
+          status: 'completed'
+        })
+      });
+
+      const request: AgentRequest = {
+        agentId: 'developer',
+        task: 'implement_feature',
+        input: { description: 'Create user authentication' }
+      };
+
+      const response = await orchestrator.executeAgent(request);
+
+      expect(response.agentId).toBe('developer');
+      expect(response.status).toBe('success');
+      expect(response.result.code_generated).toBe(true);
+      expect(response.executionTime).toBe(1500);
+    });
+
+    it('should handle agent execution errors', async () => {
+      fetchMock.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error'
+      });
+
+      const request: AgentRequest = {
+        agentId: 'developer',
+        task: 'implement_feature',
+        input: { description: 'Invalid task' }
+      };
+
+      const response = await orchestrator.executeAgent(request);
+
+      expect(response.status).toBe('error');
+      expect(response.result.error).toContain('Agent execution failed');
+    });
+
+    it('should validate agent availability before execution', async () => {
+      const request: AgentRequest = {
+        agentId: 'non-existent-agent',
+        task: 'test',
+        input: {}
+      };
+
+      const response = await orchestrator.executeAgent(request);
+
+      expect(response.status).toBe('error');
+      expect(response.result.error).toContain('Agent non-existent-agent not available');
+    });
+
+    it('should track agent execution metrics', async () => {
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ result: { success: true }, execution_time: 500 })
+      });
+
+      const request: AgentRequest = {
+        agentId: 'developer',
+        task: 'test',
+        input: {}
+      };
+
+      await orchestrator.executeAgent(request);
+
+      const metrics = orchestrator.getExecutionMetrics();
+      expect(metrics.totalExecutions).toBe(1);
+      expect(metrics.successfulExecutions).toBe(1);
+      expect(metrics.avgExecutionTime).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Multi-Agent Workflows', () => {
+    beforeEach(async () => {
+      await orchestrator.connect();
+    });
+
+    it('should execute Scout-first workflow', async () => {
+      // Mock Scout response
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            result: { duplicates_found: false, code_quality_score: 8.5 },
+            execution_time: 800
+          })
+        })
+        // Mock Developer response
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            result: { code_generated: true, files: ['auth.ts'] },
+            execution_time: 2000
+          })
+        })
+        // Mock Guardian response
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            result: { validation_passed: true, security_score: 9.0 },
+            execution_time: 1200
+          })
+        });
+
+      const workflow = [
+        { agentId: 'scout', task: 'analyze_request', input: { request: 'implement auth' } },
+        { agentId: 'developer', task: 'implement_feature', input: { feature: 'authentication' } },
+        { agentId: 'guardian', task: 'validate_implementation', input: { files: ['auth.ts'] } }
+      ];
+
+      const responses = await orchestrator.executeWorkflow(workflow);
+
+      expect(responses).toHaveLength(3);
+      expect(responses[0].agentId).toBe('scout');
+      expect(responses[1].agentId).toBe('developer');
+      expect(responses[2].agentId).toBe('guardian');
+      expect(responses.every(r => r.status === 'success')).toBe(true);
+    });
+
+    it('should handle workflow interruption on critical failure', async () => {
+      // Mock Scout response with duplicates found
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          result: { duplicates_found: true, duplicates: ['existing-auth.ts'] },
+          execution_time: 500
+        })
+      });
+
+      const workflow = [
+        { agentId: 'scout', task: 'analyze_request', input: { request: 'implement auth' } },
+        { agentId: 'developer', task: 'implement_feature', input: { feature: 'authentication' } }
+      ];
+
+      const responses = await orchestrator.executeWorkflow(workflow, { 
+        stopOnScoutDuplicates: true 
+      });
+
+      expect(responses).toHaveLength(1);
+      expect(responses[0].agentId).toBe('scout');
+      expect(responses[0].result.duplicates_found).toBe(true);
+    });
+
+    it('should execute parallel agents when possible', async () => {
+      // Mock parallel responses
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ result: { analysis_complete: true }, execution_time: 1000 })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ result: { security_check: true }, execution_time: 800 })
+        });
+
+      const workflow = [
+        { agentId: 'scout', task: 'analyze', input: {}, parallel: true },
+        { agentId: 'guardian', task: 'security_scan', input: {}, parallel: true }
+      ];
+
+      const startTime = Date.now();
+      const responses = await orchestrator.executeWorkflow(workflow);
+      const duration = Date.now() - startTime;
+
+      expect(responses).toHaveLength(2);
+      expect(duration).toBeLessThan(1500); // Should be parallel, not sequential
+    });
+
+    it('should maintain workflow context between agents', async () => {
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            result: { files_to_create: ['user.ts', 'auth.ts'] },
+            execution_time: 500
+          })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            result: { files_created: ['user.ts', 'auth.ts'] },
+            execution_time: 1500
+          })
+        });
+
+      const workflow = [
+        { agentId: 'architect', task: 'design', input: { feature: 'user_management' } },
+        { agentId: 'developer', task: 'implement', input: { design: '{{previous.result.files_to_create}}' } }
+      ];
+
+      const responses = await orchestrator.executeWorkflow(workflow);
+
+      expect(responses).toHaveLength(2);
+      // Check that context was passed correctly
+      expect(fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.stringContaining('user.ts')
+        })
+      );
+    });
+  });
+
+  describe('Error Handling and Recovery', () => {
+    beforeEach(async () => {
+      await orchestrator.connect();
+    });
+
+    it('should retry failed agent executions', async () => {
+      let attempts = 0;
+      fetchMock.mockImplementation(() => {
+        attempts++;
+        if (attempts < 3) {
+          return Promise.resolve({ ok: false, status: 503 });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ result: { success: true } })
+        });
+      });
+
+      const request: AgentRequest = {
+        agentId: 'developer',
+        task: 'test',
+        input: {},
+        retryConfig: { maxRetries: 3, delay: 10 }
+      };
+
+      const response = await orchestrator.executeAgent(request);
+
+      expect(response.status).toBe('success');
+      expect(attempts).toBe(3);
+    });
+
+    it('should handle agent timeout gracefully', async () => {
+      fetchMock.mockImplementation(() => 
+        new Promise(resolve => 
+          setTimeout(() => resolve({
+            ok: true,
+            json: async () => ({ result: { success: true } })
+          }), 2000)
+        )
+      );
+
+      const request: AgentRequest = {
+        agentId: 'developer',
+        task: 'test',
+        input: {},
+        timeout: 100
+      };
+
+      const response = await orchestrator.executeAgent(request);
+
+      expect(response.status).toBe('error');
+      expect(response.result.error).toContain('timeout');
+    });
+
+    it('should recover from agent failures in workflow', async () => {
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ result: { analysis: 'complete' } })
+        })
+        .mockResolvedValueOnce({ ok: false, status: 500 })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ result: { validation: 'passed' } })
+        });
+
+      const workflow = [
+        { agentId: 'scout', task: 'analyze', input: {} },
+        { agentId: 'developer', task: 'implement', input: {} },
+        { agentId: 'guardian', task: 'validate', input: {} }
+      ];
+
+      const responses = await orchestrator.executeWorkflow(workflow, {
+        continueOnError: true
+      });
+
+      expect(responses).toHaveLength(3);
+      expect(responses[0].status).toBe('success');
+      expect(responses[1].status).toBe('error');
+      expect(responses[2].status).toBe('success');
+    });
+  });
+
+  describe('Performance and Monitoring', () => {
+    beforeEach(async () => {
+      await orchestrator.connect();
+    });
+
+    it('should track execution metrics accurately', async () => {
+      // Execute multiple agents to build metrics
+      const responses = [
+        { result: { success: true }, execution_time: 500 },
+        { result: { success: true }, execution_time: 1000 },
+        { result: { error: 'failed' }, execution_time: 200 }
+      ];
+
+      for (const response of responses) {
+        fetchMock.mockResolvedValueOnce({
+          ok: response.result.error ? false : true,
+          json: async () => response
+        });
+
+        await orchestrator.executeAgent({
+          agentId: 'developer',
+          task: 'test',
+          input: {}
+        });
+      }
+
+      const metrics = orchestrator.getExecutionMetrics();
+
+      expect(metrics.totalExecutions).toBe(3);
+      expect(metrics.successfulExecutions).toBe(2);
+      expect(metrics.failedExecutions).toBe(1);
+      expect(metrics.avgExecutionTime).toBe(566.67); // (500 + 1000 + 200) / 3
+    });
+
+    it('should emit performance events', async () => {
+      const performanceEvents: any[] = [];
+      orchestrator.on('agent_performance', (data) => {
+        performanceEvents.push(data);
+      });
+
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ result: { success: true }, execution_time: 1500 })
+      });
+
+      await orchestrator.executeAgent({
+        agentId: 'developer',
+        task: 'test',
+        input: {}
+      });
+
+      expect(performanceEvents).toHaveLength(1);
+      expect(performanceEvents[0].agentId).toBe('developer');
+      expect(performanceEvents[0].executionTime).toBe(1500);
+    });
+
+    it('should detect slow agent performance', async () => {
+      const slowAgentEvents: any[] = [];
+      orchestrator.on('slow_agent_detected', (data) => {
+        slowAgentEvents.push(data);
+      });
+
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ result: { success: true }, execution_time: 10000 })
+      });
+
+      await orchestrator.executeAgent({
+        agentId: 'developer',
+        task: 'test',
+        input: {}
+      });
+
+      expect(slowAgentEvents).toHaveLength(1);
+      expect(slowAgentEvents[0].agentId).toBe('developer');
+      expect(slowAgentEvents[0].executionTime).toBe(10000);
+    });
+  });
+
+  describe('Configuration Management', () => {
+    it('should update orchestrator configuration', () => {
+      const newConfig: Partial<OrchestratorConfig> = {
+        maxConcurrentAgents: 10,
+        defaultTimeout: 30000,
+        retryPolicy: { maxRetries: 5, delay: 200 }
+      };
+
+      orchestrator.updateConfig(newConfig);
+      const currentConfig = orchestrator.getConfig();
+
+      expect(currentConfig.maxConcurrentAgents).toBe(10);
+      expect(currentConfig.defaultTimeout).toBe(30000);
+      expect(currentConfig.retryPolicy.maxRetries).toBe(5);
+    });
+
+    it('should validate configuration changes', () => {
+      const invalidConfig: any = {
+        maxConcurrentAgents: -1,
+        defaultTimeout: 'invalid'
+      };
+
+      expect(() => {
+        orchestrator.updateConfig(invalidConfig);
+      }).toThrow('Invalid configuration');
+    });
+  });
+
+  describe('Connection Management', () => {
+    it('should connect to agent server successfully', async () => {
+      const connectPromise = orchestrator.connect();
+      
+      await expect(connectPromise).resolves.not.toThrow();
+      expect(orchestrator.isConnected()).toBe(true);
+    });
+
+    it('should handle connection failures gracefully', async () => {
+      fetchMock.mockRejectedValue(new Error('Connection failed'));
+      
+      await expect(orchestrator.connect()).resolves.not.toThrow();
+      expect(orchestrator.isConnected()).toBe(false);
+    });
+
+    it('should disconnect gracefully', async () => {
+      await orchestrator.connect();
+      expect(orchestrator.isConnected()).toBe(true);
+      
+      orchestrator.disconnect();
+      expect(orchestrator.isConnected()).toBe(false);
+    });
+
+    it('should auto-reconnect on connection loss', async () => {
+      await orchestrator.connect();
+      
+      const reconnectEvents: any[] = [];
+      orchestrator.on('reconnected', (data) => {
+        reconnectEvents.push(data);
+      });
+
+      // Simulate connection loss
+      orchestrator.emit('connection_lost');
+      
+      // Wait for auto-reconnect
+      await AsyncTestUtils.delay(100);
+      
+      expect(reconnectEvents).toHaveLength(1);
+    });
+  });
+
+  describe('Integration with Agent Components', () => {
+    beforeEach(async () => {
+      await orchestrator.connect();
+    });
+
+    it('should integrate with Scout pipeline', async () => {
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          result: {
+            duplicates_found: true,
+            similar_files: ['existing-auth.ts'],
+            recommendation: 'Use existing implementation'
+          }
+        })
+      });
+
+      const response = await orchestrator.executeAgent({
+        agentId: 'scout',
+        task: 'check_duplicates',
+        input: { target: 'authentication' }
+      });
+
+      expect(response.result.duplicates_found).toBe(true);
+      expect(response.result.similar_files).toContain('existing-auth.ts');
+    });
+
+    it('should integrate with Guardian validation', async () => {
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          result: {
+            validation_passed: false,
+            issues: [
+              { severity: 'critical', title: 'Security vulnerability' },
+              { severity: 'warning', title: 'Code quality issue' }
+            ]
+          }
+        })
+      });
+
+      const response = await orchestrator.executeAgent({
+        agentId: 'guardian',
+        task: 'validate_code',
+        input: { files: ['auth.ts'] }
+      });
+
+      expect(response.result.validation_passed).toBe(false);
+      expect(response.result.issues).toHaveLength(2);
+    });
+
+    it('should handle Natural Language CLI integration', async () => {
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          result: {
+            intent: 'implement_feature',
+            confidence: 0.9,
+            suggested_agent: 'developer',
+            entities: { component: 'authentication' }
+          }
+        })
+      });
+
+      const response = await orchestrator.executeAgent({
+        agentId: 'nlp_parser',
+        task: 'parse_command',
+        input: { command: 'create user authentication system' }
+      });
+
+      expect(response.result.intent).toBe('implement_feature');
+      expect(response.result.suggested_agent).toBe('developer');
+    });
+  });
+});

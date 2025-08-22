@@ -1,0 +1,257 @@
+# Docker Compose for Gemini Enterprise Architect - Local Development
+# Provides complete development stack with all services
+
+version: '3.8'
+
+services:
+  # Redis for caching and session storage
+  redis:
+    image: redis:7-alpine
+    container_name: gemini-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gemini-network
+
+  # PostgreSQL for persistent data storage
+  postgres:
+    image: postgres:15-alpine
+    container_name: gemini-postgres
+    environment:
+      POSTGRES_DB: gemini_enterprise
+      POSTGRES_USER: gemini
+      POSTGRES_PASSWORD: gemini_dev_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gemini -d gemini_enterprise"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gemini-network
+
+  # Qdrant vector database for RAG system
+  qdrant:
+    image: qdrant/qdrant:v1.7.0
+    container_name: gemini-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__LOG_LEVEL: INFO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - gemini-network
+
+  # Knowledge Base and RAG System
+  knowledge-base:
+    build:
+      context: .
+      dockerfile: docker/knowledge.Dockerfile
+    container_name: gemini-knowledge
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+      - LOG_LEVEL=debug
+      - KNOWLEDGE_ENV=development
+      - VECTOR_DB_HOST=qdrant
+      - VECTOR_DB_PORT=6333
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - EMBEDDING_MODEL=all-MiniLM-L6-v2
+      - CHUNK_SIZE=512
+      - CHUNK_OVERLAP=50
+    volumes:
+      - ./src/knowledge:/app/src/knowledge
+      - ./src/api:/app/src/api
+      - knowledge_data:/app/data
+      - knowledge_logs:/app/logs
+      - knowledge_cache:/app/cache
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/v1/knowledge/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - gemini-network
+
+  # Agent Server
+  agent-server:
+    build:
+      context: .
+      dockerfile: docker/agent-server.Dockerfile
+    container_name: gemini-agent-server
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - LOG_LEVEL=debug
+      - APP_ENV=development
+      - WORKERS=2
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=gemini_enterprise
+      - POSTGRES_USER=gemini
+      - POSTGRES_PASSWORD=gemini_dev_password
+      - KNOWLEDGE_BASE_URL=http://knowledge-base:8001
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - agent_logs:/app/logs
+      - agent_data:/app/data
+      - agent_cache:/app/cache
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      knowledge-base:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - gemini-network
+
+  # CLI Development Container
+  cli-dev:
+    build:
+      context: .
+      dockerfile: docker/cli.Dockerfile
+    container_name: gemini-cli-dev
+    environment:
+      - NODE_ENV=development
+      - GEMINI_API_BASE_URL=http://agent-server:8000
+    volumes:
+      - ./packages:/app/packages
+      - ./scripts:/app/scripts
+      - ./package.json:/app/package.json
+      - ./package-lock.json:/app/package-lock.json
+      - cli_cache:/home/gemini/.cache
+    depends_on:
+      - agent-server
+    stdin_open: true
+    tty: true
+    networks:
+      - gemini-network
+
+  # All-in-One Development Environment
+  dev-environment:
+    build:
+      context: .
+      dockerfile: docker/dev.Dockerfile
+    container_name: gemini-dev-env
+    ports:
+      - "3000:3000"   # Frontend dev server
+      - "5173:5173"   # Vite dev server
+      - "8080:8080"   # Additional dev server
+      - "9229:9229"   # Node.js debugger
+    environment:
+      - NODE_ENV=development
+      - PYTHONPATH=/workspace
+      - LOG_LEVEL=debug
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=gemini_enterprise
+      - POSTGRES_USER=gemini
+      - POSTGRES_PASSWORD=gemini_dev_password
+    volumes:
+      - .:/workspace
+      - dev_cache:/home/developer/.cache
+      - dev_npm_cache:/usr/local/share/npm-global
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+    networks:
+      - gemini-network
+
+  # Nginx reverse proxy for development
+  nginx:
+    image: nginx:alpine
+    container_name: gemini-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - agent-server
+      - knowledge-base
+    networks:
+      - gemini-network
+
+volumes:
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+  qdrant_data:
+    driver: local
+  knowledge_data:
+    driver: local
+  knowledge_logs:
+    driver: local
+  knowledge_cache:
+    driver: local
+  agent_logs:
+    driver: local
+  agent_data:
+    driver: local
+  agent_cache:
+    driver: local
+  cli_cache:
+    driver: local
+  dev_cache:
+    driver: local
+  dev_npm_cache:
+    driver: local
+  nginx_logs:
+    driver: local
+
+networks:
+  gemini-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

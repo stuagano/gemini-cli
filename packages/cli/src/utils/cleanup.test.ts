@@ -5,7 +5,12 @@
  */
 
 import { vi } from 'vitest';
-import { registerCleanup, runExitCleanup } from './cleanup';
+import { registerCleanup, runExitCleanup } from './cleanup.js';
+
+declare global {
+  // eslint-disable-next-line no-var
+  var cleanupFunctions: Array<() => void | Promise<void>>;
+}
 
 describe('cleanup', () => {
   const originalCleanupFunctions = global['cleanupFunctions'];

@@ -1,0 +1,241 @@
+# Deployment for Gemini Agent Server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-server
+  namespace: gemini-${ENVIRONMENT}
+  labels:
+    app: gemini-agent-server
+    environment: ${ENVIRONMENT}
+    version: v1
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: gemini-agent-server
+      environment: ${ENVIRONMENT}
+  template:
+    metadata:
+      labels:
+        app: gemini-agent-server
+        environment: ${ENVIRONMENT}
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: gemini-agent-server
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: agent-server
+        image: IMAGE_PLACEHOLDER
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8000"
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: gemini-config
+              key: ENVIRONMENT
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: gemini-config
+              key: LOG_LEVEL
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: gemini-config
+              key: DB_HOST
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: gemini-secrets
+              key: DB_PASSWORD
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: gemini-config
+              key: REDIS_HOST
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: gemini-secrets
+              key: OPENAI_API_KEY
+        envFrom:
+        - configMapRef:
+            name: gemini-config
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        volumeMounts:
+        - name: logs
+          mountPath: /app/logs
+        - name: cache
+          mountPath: /app/cache
+        - name: bmad-config
+          mountPath: /app/.bmad-core
+          readOnly: true
+      volumes:
+      - name: logs
+        emptyDir: {}
+      - name: cache
+        emptyDir: {}
+      - name: bmad-config
+        configMap:
+          name: bmad-config
+      tolerations:
+      - key: "agent-workload"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      nodeSelector:
+        workload-type: "agent"
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - gemini-agent-server
+              topologyKey: kubernetes.io/hostname
+
+---
+# Service for Agent Server
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-server-service
+  namespace: gemini-${ENVIRONMENT}
+  labels:
+    app: gemini-agent-server
+    environment: ${ENVIRONMENT}
+  annotations:
+    cloud.google.com/load-balancer-type: "External"
+    service.beta.kubernetes.io/gce-service-name: "gemini-agent-server-${ENVIRONMENT}"
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: http
+    protocol: TCP
+    name: http
+  - port: 443
+    targetPort: http
+    protocol: TCP
+    name: https
+  selector:
+    app: gemini-agent-server
+    environment: ${ENVIRONMENT}
+
+---
+# Service Account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gemini-agent-server
+  namespace: gemini-${ENVIRONMENT}
+  labels:
+    app: gemini-agent-server
+    environment: ${ENVIRONMENT}
+  annotations:
+    iam.gke.io/gcp-service-account: gemini-agent-server@${PROJECT_ID}.iam.gserviceaccount.com
+
+---
+# HorizontalPodAutoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: agent-server-hpa
+  namespace: gemini-${ENVIRONMENT}
+  labels:
+    app: gemini-agent-server
+    environment: ${ENVIRONMENT}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: agent-server
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60
+
+---
+# PodDisruptionBudget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agent-server-pdb
+  namespace: gemini-${ENVIRONMENT}
+  labels:
+    app: gemini-agent-server
+    environment: ${ENVIRONMENT}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: gemini-agent-server
+      environment: ${ENVIRONMENT}

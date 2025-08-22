@@ -56,7 +56,7 @@ describe('runNonInteractive', () => {
     mockToolRegistry = {
       getTool: vi.fn(),
       getFunctionDeclarations: vi.fn().mockReturnValue([]),
-    } as unknown as ToolRegistry;
+    } as Partial<ToolRegistry>;
 
     mockGeminiClient = {
       sendMessageStream: vi.fn(),
@@ -71,7 +71,7 @@ describe('runNonInteractive', () => {
       getFullContext: vi.fn().mockReturnValue(false),
       getContentGeneratorConfig: vi.fn().mockReturnValue({}),
       getDebugMode: vi.fn().mockReturnValue(false),
-    } as unknown as Config;
+    } as Partial<Config>;
   });
 
   afterEach(() => {

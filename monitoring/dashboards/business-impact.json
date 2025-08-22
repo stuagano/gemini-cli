@@ -1,0 +1,399 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Business Impact & Cost Monitoring",
+    "tags": ["business", "cost", "revenue", "roi", "optimization"],
+    "style": "dark",
+    "timezone": "browser",
+    "refresh": "5m",
+    "schemaVersion": 30,
+    "version": 1,
+    "time": {
+      "from": "now-7d",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Total Cost Savings (Last 7 Days)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(increase(gemini_cost_savings_usd_total[7d]))",
+            "legendFormat": "Cost Savings ($)",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": 0},
+                {"color": "yellow", "value": 5000},
+                {"color": "red", "value": 25000}
+              ]
+            },
+            "unit": "currencyUSD"
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Infrastructure Costs (Monthly)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(gemini_infrastructure_cost_monthly_usd)",
+            "legendFormat": "Monthly Cost ($)",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 10000},
+                {"color": "red", "value": 50000}
+              ]
+            },
+            "unit": "currencyUSD"
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Cost per Agent Request",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(gemini_infrastructure_cost_monthly_usd) / sum(increase(gemini_agent_requests_total[30d])) * 30",
+            "legendFormat": "Cost per Request ($)",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 0.1},
+                {"color": "red", "value": 1.0}
+              ]
+            },
+            "unit": "currencyUSD",
+            "decimals": 4
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "ROI from Optimizations",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(increase(gemini_cost_savings_usd_total[30d])) / sum(gemini_optimization_investment_usd) * 100",
+            "legendFormat": "ROI %",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 100},
+                {"color": "green", "value": 300}
+              ]
+            },
+            "unit": "percent"
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0}
+      },
+      {
+        "id": 5,
+        "title": "Cost Breakdown by Service",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum(gemini_service_cost_usd) by (service)",
+            "legendFormat": "{{service}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 6,
+        "title": "Daily Cost Trend",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "sum(increase(gemini_infrastructure_cost_usd_total[1d]))",
+            "legendFormat": "Daily Infrastructure Cost",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(increase(gemini_optimization_savings_usd_total[1d]))",
+            "legendFormat": "Daily Savings",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "bars",
+              "fillOpacity": 80
+            },
+            "unit": "currencyUSD"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 7,
+        "title": "Agent Utilization Efficiency",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "sum(rate(gemini_agent_requests_total[5m])) / sum(gemini_agent_capacity_total) * 100",
+            "legendFormat": "Utilization %",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear"
+            },
+            "unit": "percent"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      },
+      {
+        "id": 8,
+        "title": "Resource Waste Detection",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "sum(gemini_resource_allocated_cost_usd) - sum(gemini_resource_utilized_cost_usd)",
+            "legendFormat": "Wasted Cost ($)",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear"
+            },
+            "unit": "currencyUSD"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      },
+      {
+        "id": 9,
+        "title": "Top Cost Optimization Opportunities",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "topk(10, sum(gemini_optimization_potential_savings_usd) by (service, optimization_type))",
+            "legendFormat": "{{service}} - {{optimization_type}}",
+            "refId": "A"
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {},
+              "indexByName": {},
+              "renameByName": {
+                "service": "Service",
+                "optimization_type": "Optimization Type",
+                "Value": "Potential Savings ($)"
+              }
+            }
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
+      },
+      {
+        "id": 10,
+        "title": "Performance vs Cost Analysis",
+        "type": "scatterplot",
+        "targets": [
+          {
+            "expr": "sum(gemini_service_cost_usd) by (service)",
+            "legendFormat": "Cost - {{service}}",
+            "refId": "A"
+          },
+          {
+            "expr": "avg(gemini_agent_response_time_seconds) by (service)",
+            "legendFormat": "Response Time - {{service}}",
+            "refId": "B"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}
+      },
+      {
+        "id": 11,
+        "title": "Auto-scaling Cost Impact",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "sum(gemini_autoscaling_events_total) by (direction)",
+            "legendFormat": "{{direction}} events",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(gemini_autoscaling_cost_impact_usd)",
+            "legendFormat": "Cost Impact ($)",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32}
+      },
+      {
+        "id": 12,
+        "title": "Developer Productivity Metrics",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "sum(gemini_developer_requests_completed_total) / sum(gemini_developer_time_spent_hours)",
+            "legendFormat": "Requests per Developer Hour",
+            "refId": "A"
+          },
+          {
+            "expr": "avg(gemini_time_to_resolution_hours)",
+            "legendFormat": "Avg Time to Resolution (hours)",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32}
+      },
+      {
+        "id": 13,
+        "title": "Quality Impact of Optimizations",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "avg(gemini_code_quality_score_post_optimization) - avg(gemini_code_quality_score_pre_optimization)",
+            "legendFormat": "Quality Improvement",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": -10},
+                {"color": "yellow", "value": 0},
+                {"color": "green", "value": 10}
+              ]
+            },
+            "unit": "short",
+            "min": -20,
+            "max": 20
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 40}
+      },
+      {
+        "id": 14,
+        "title": "Bug Reduction Rate",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "(1 - sum(rate(gemini_bugs_introduced_total[7d])) / sum(rate(gemini_bugs_baseline_total[7d]))) * 100",
+            "legendFormat": "Bug Reduction %",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 25},
+                {"color": "green", "value": 50}
+              ]
+            },
+            "unit": "percent",
+            "min": 0,
+            "max": 100
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 40}
+      },
+      {
+        "id": 15,
+        "title": "Cost Attribution by Team",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "sum(gemini_team_cost_attribution_usd) by (team, project)",
+            "legendFormat": "{{team}} - {{project}}",
+            "refId": "A"
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {},
+              "indexByName": {},
+              "renameByName": {
+                "team": "Team",
+                "project": "Project",
+                "Value": "Cost ($)"
+              }
+            }
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40}
+      }
+    ]
+  }
+}

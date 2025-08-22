@@ -1,0 +1,6 @@
+{
+  "embedding_endpoint_id": "8859744849851580416",
+  "embedding_endpoint_name": "gemini-embedding-endpoint",
+  "project_id": "mgm-digitalconcierge",
+  "location": "us-central1"
+}

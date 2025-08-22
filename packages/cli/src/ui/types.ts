@@ -136,6 +136,12 @@ export type HistoryItemCompression = HistoryItemBase & {
   compression: CompressionProps;
 };
 
+export type HistoryItemInteractiveMode = HistoryItemBase & {
+  type: 'interactive_mode';
+  teachingLevel: 'junior' | 'senior' | 'architect';
+  timestamp: Date;
+};
+
 // Using Omit<HistoryItem, 'id'> seems to have some issues with typescript's
 // type inference e.g. historyItem.type === 'tool_group' isn't auto-inferring that
 // 'tools' in historyItem.
@@ -154,7 +160,8 @@ export type HistoryItemWithoutId =
   | HistoryItemModelStats
   | HistoryItemToolStats
   | HistoryItemQuit
-  | HistoryItemCompression;
+  | HistoryItemCompression
+  | HistoryItemInteractiveMode;
 
 export type HistoryItem = HistoryItemWithoutId & { id: number };
 
@@ -171,6 +178,7 @@ export enum MessageType {
   QUIT = 'quit',
   GEMINI = 'gemini',
   COMPRESSION = 'compression',
+  INTERACTIVE_MODE = 'interactive_mode',
 }
 
 // Simplified message structure for internal feedback

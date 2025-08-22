@@ -1,0 +1,104 @@
+# ConfigMap for Gemini Agent Server
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gemini-config
+  namespace: gemini-${ENVIRONMENT}
+  labels:
+    app: gemini-agent-server
+    environment: ${ENVIRONMENT}
+data:
+  # Environment configuration
+  ENVIRONMENT: "${ENVIRONMENT}"
+  LOG_LEVEL: "INFO"
+  PROJECT_ID: "${PROJECT_ID}"
+  REGION: "${REGION}"
+  
+  # Database configuration (GCP Cloud SQL)
+  DB_HOST: "${POSTGRES_PRIVATE_IP}"
+  DB_PORT: "5432"
+  DB_NAME: "gemini_enterprise"
+  DB_USER: "gemini_app"
+  
+  # Redis configuration (GCP Memorystore)
+  REDIS_HOST: "${REDIS_HOST}"
+  REDIS_PORT: "6379"
+  
+  # Vertex AI configuration
+  VERTEX_AI_PROJECT: "${PROJECT_ID}"
+  VERTEX_AI_REGION: "us-central1"
+  VERTEX_AI_ENDPOINT: "${VERTEX_AI_ENDPOINT}"
+  GEMINI_MODEL: "gemini-1.5-pro"
+  
+  # Agent configuration
+  MAX_AGENTS: "10"
+  AGENT_TIMEOUT: "300"
+  MAX_CONCURRENT_REQUESTS: "100"
+  
+  # Scout configuration
+  SCOUT_ENABLED: "true"
+  SCOUT_INDEX_INTERVAL: "3600"
+  
+  # Guardian configuration
+  GUARDIAN_ENABLED: "true"
+  GUARDIAN_WATCH_PATHS: "/app/src,/app/tests"
+  
+  # RAG system configuration
+  RAG_ENABLED: "true"
+  KNOWLEDGE_CACHE_TTL: "3600"
+  
+  # BMAD configuration
+  BMAD_ENABLED: "true"
+  
+  # Performance settings
+  WORKER_PROCESSES: "4"
+  MAX_MEMORY_MB: "2048"
+  
+  # Monitoring and DORA metrics
+  METRICS_ENABLED: "true"
+  DORA_METRICS_ENABLED: "true"
+  TRACING_ENABLED: "true"
+  HEALTH_CHECK_PATH: "/api/v1/health"
+  
+  # OpenTelemetry configuration
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+  OTEL_SERVICE_NAME: "gemini-agent-server"
+  
+  # Cache configuration
+  CACHE_TTL_SECONDS: "3600"
+  RATE_LIMIT_PER_MINUTE: "1000"
+  
+---
+# Secret template (secrets should be managed separately)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gemini-secrets
+  namespace: gemini-${ENVIRONMENT}
+  labels:
+    app: gemini-agent-server
+    environment: ${ENVIRONMENT}
+type: Opaque
+stringData:
+  # Database credentials (managed by Secret Manager)
+  DB_PASSWORD: "placeholder"
+  DATABASE_URL: "postgresql://gemini_app:placeholder@${POSTGRES_PRIVATE_IP}:5432/gemini_enterprise"
+  
+  # Redis credentials (managed by Secret Manager)
+  REDIS_AUTH: "placeholder"
+  REDIS_URL: "redis://:placeholder@${REDIS_HOST}:6379"
+  
+  # DORA metrics database
+  DORA_DB_URL: "postgresql://gemini_app:placeholder@${POSTGRES_PRIVATE_IP}:5432/gemini_enterprise"
+  
+  # API keys (managed by Secret Manager)
+  GOOGLE_AI_API_KEY: "placeholder"
+  VERTEX_AI_CREDENTIALS: "placeholder"
+  
+  # External service tokens
+  GITHUB_TOKEN: "placeholder"
+  SLACK_WEBHOOK_URL: "placeholder"
+  
+  # OAuth2 secrets (for future security implementation)
+  OAUTH2_CLIENT_SECRET: "placeholder"
+  JWT_SECRET_KEY: "placeholder"

@@ -1,0 +1,191 @@
+# Ingress configuration for Gemini Agent Server
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gemini-ingress
+  namespace: gemini-${ENVIRONMENT}
+  labels:
+    app: gemini-agent-server
+    environment: ${ENVIRONMENT}
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    kubernetes.io/ingress.global-static-ip-name: "gemini-${ENVIRONMENT}-ip"
+    networking.gke.io/managed-certificates: "gemini-ssl-cert"
+    ingress.gcp.kubernetes.io/load-balancer-type: "external"
+    cloud.google.com/armor-config: '{"gemini-security-policy": "gemini-armor-policy"}'
+    
+    # Rate limiting
+    ingress.kubernetes.io/rate-limit-qps: "100"
+    ingress.kubernetes.io/rate-limit-connections: "1000"
+    
+    # CORS settings
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://gemini.ai,https://*.gemini.ai"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+    
+    # Timeouts
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    
+    # Request size
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+spec:
+  rules:
+  - host: gemini-${ENVIRONMENT}.company.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: agent-server-service
+            port:
+              number: 80
+  - host: api-${ENVIRONMENT}.gemini.company.com
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: agent-server-service
+            port:
+              number: 80
+  - host: ws-${ENVIRONMENT}.gemini.company.com
+    http:
+      paths:
+      - path: /ws
+        pathType: Prefix
+        backend:
+          service:
+            name: agent-server-service
+            port:
+              number: 80
+
+---
+# Managed SSL Certificate
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: gemini-ssl-cert
+  namespace: gemini-${ENVIRONMENT}
+  labels:
+    app: gemini-agent-server
+    environment: ${ENVIRONMENT}
+spec:
+  domains:
+    - gemini-${ENVIRONMENT}.company.com
+    - api-${ENVIRONMENT}.gemini.company.com
+    - ws-${ENVIRONMENT}.gemini.company.com
+
+---
+# BackendConfig for advanced load balancer settings
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: gemini-backend-config
+  namespace: gemini-${ENVIRONMENT}
+  labels:
+    app: gemini-agent-server
+    environment: ${ENVIRONMENT}
+spec:
+  # Health check configuration
+  healthCheck:
+    checkIntervalSec: 30
+    timeoutSec: 10
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+    type: HTTP
+    requestPath: /api/v1/health
+    port: 8000
+  
+  # Session affinity for WebSocket connections
+  sessionAffinity:
+    affinityType: "CLIENT_IP"
+    affinityCookieTtlSec: 86400
+  
+  # Connection draining
+  connectionDraining:
+    drainingTimeoutSec: 60
+  
+  # Custom request headers
+  customRequestHeaders:
+    headers:
+    - "X-Environment:${ENVIRONMENT}"
+    - "X-Service:gemini-agent-server"
+  
+  # Timeout settings
+  timeoutSec: 60
+  
+  # Security policy
+  securityPolicy:
+    name: "gemini-armor-policy"
+  
+  # Logging
+  logging:
+    enable: true
+    sampleRate: 1.0
+
+---
+# Cloud Armor Security Policy
+apiVersion: compute.cnrm.cloud.google.com/v1beta1
+kind: ComputeSecurityPolicy
+metadata:
+  name: gemini-armor-policy
+  namespace: gemini-${ENVIRONMENT}
+  labels:
+    app: gemini-agent-server
+    environment: ${ENVIRONMENT}
+spec:
+  description: "Security policy for Gemini Agent Server"
+  
+  # Default rule - allow
+  rule:
+  - action: "allow"
+    priority: 2147483647
+    match:
+      versionedExpr: "SRC_IPS_V1"
+      config:
+        srcIpRanges:
+        - "*"
+    description: "Default allow rule"
+  
+  # Rate limiting rule
+  - action: "rate_based_ban"
+    priority: 1000
+    match:
+      versionedExpr: "SRC_IPS_V1" 
+      config:
+        srcIpRanges:
+        - "*"
+    description: "Rate limit rule"
+    rateLimitOptions:
+      conformAction: "allow"
+      exceedAction: "deny(429)"
+      enforceOnKey: "IP"
+      rateLimitThreshold:
+        count: 100
+        intervalSec: 60
+      banDurationSec: 300
+  
+  # Block known bad IPs (example)
+  - action: "deny(403)"
+    priority: 500
+    match:
+      versionedExpr: "SRC_IPS_V1"
+      config:
+        srcIpRanges:
+        - "192.0.2.0/24"  # Example bad IP range
+    description: "Block malicious IPs"
+  
+  # Allow specific health check IPs
+  - action: "allow"
+    priority: 100
+    match:
+      versionedExpr: "SRC_IPS_V1"
+      config:
+        srcIpRanges:
+        - "35.191.0.0/16"    # Google Cloud Load Balancer health checks
+        - "130.211.0.0/22"   # Google Cloud Load Balancer health checks
+    description: "Allow Google Cloud health checks"

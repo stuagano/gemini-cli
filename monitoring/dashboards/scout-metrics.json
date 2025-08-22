@@ -1,0 +1,366 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Scout - Duplicate Detection & Indexing Metrics",
+    "tags": ["scout", "indexing", "duplicates", "code-analysis"],
+    "style": "dark",
+    "timezone": "browser",
+    "refresh": "30s",
+    "schemaVersion": 30,
+    "version": 1,
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Total Files Indexed",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(gemini_scout_total_files_indexed)",
+            "legendFormat": "Files",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 10000},
+                {"color": "red", "value": 50000}
+              ]
+            },
+            "unit": "short"
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Duplicates Found",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(gemini_scout_duplicates_detected_total)",
+            "legendFormat": "Duplicates",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 50},
+                {"color": "red", "value": 200}
+              ]
+            },
+            "unit": "short"
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Indexing Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(gemini_scout_files_indexed_total[5m]) * 60",
+            "legendFormat": "Files/min",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 10},
+                {"color": "green", "value": 50}
+              ]
+            },
+            "unit": "short"
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "Detection Accuracy",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "gemini_scout_duplicate_detection_accuracy_percent",
+            "legendFormat": "Accuracy %",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 80},
+                {"color": "green", "value": 95}
+              ]
+            },
+            "unit": "percent"
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0}
+      },
+      {
+        "id": 5,
+        "title": "File Indexing Performance",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(gemini_scout_files_indexed_total[5m]) * 60",
+            "legendFormat": "Files Indexed/min",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(gemini_scout_indexing_errors_total[5m]) * 60",
+            "legendFormat": "Indexing Errors/min",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "pointSize": 5,
+              "fillOpacity": 20
+            },
+            "unit": "short"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 6,
+        "title": "Duplicate Detection Rate",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(gemini_scout_duplicates_detected_total[5m]) * 60",
+            "legendFormat": "Duplicates Found/min",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(gemini_scout_false_positives_total[5m]) * 60",
+            "legendFormat": "False Positives/min",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear"
+            },
+            "unit": "short"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 7,
+        "title": "Language Distribution",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum(gemini_scout_files_by_language) by (language)",
+            "legendFormat": "{{language}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 16}
+      },
+      {
+        "id": 8,
+        "title": "Duplicate Severity Distribution",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum(gemini_scout_duplicates_by_severity) by (severity)",
+            "legendFormat": "{{severity}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 16}
+      },
+      {
+        "id": 9,
+        "title": "Function Complexity Analysis",
+        "type": "histogram",
+        "targets": [
+          {
+            "expr": "sum(rate(gemini_scout_function_complexity_bucket[5m])) by (le)",
+            "legendFormat": "Complexity",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 16}
+      },
+      {
+        "id": 10,
+        "title": "Top Duplicate Hotspots",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "topk(10, sum(gemini_scout_duplicates_by_file) by (file_path))",
+            "legendFormat": "{{file_path}}",
+            "refId": "A"
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {},
+              "indexByName": {},
+              "renameByName": {
+                "file_path": "File Path",
+                "Value": "Duplicate Count"
+              }
+            }
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
+      },
+      {
+        "id": 11,
+        "title": "Indexing Queue Status",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "gemini_scout_indexing_queue_size",
+            "legendFormat": "Queue Size",
+            "refId": "A"
+          },
+          {
+            "expr": "gemini_scout_indexing_workers_active",
+            "legendFormat": "Active Workers",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear"
+            },
+            "unit": "short"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}
+      },
+      {
+        "id": 12,
+        "title": "Memory Usage by Index Type",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "gemini_scout_index_memory_usage_bytes by (index_type)",
+            "legendFormat": "{{index_type}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear"
+            },
+            "unit": "bytes"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32}
+      },
+      {
+        "id": 13,
+        "title": "Similarity Score Distribution",
+        "type": "histogram",
+        "targets": [
+          {
+            "expr": "sum(rate(gemini_scout_similarity_score_bucket[5m])) by (le)",
+            "legendFormat": "Similarity Score",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32}
+      },
+      {
+        "id": 14,
+        "title": "Code Patterns Detected",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "sum(gemini_scout_patterns_detected_total) by (pattern_type, severity)",
+            "legendFormat": "{{pattern_type}} - {{severity}}",
+            "refId": "A"
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {},
+              "indexByName": {},
+              "renameByName": {
+                "pattern_type": "Pattern Type",
+                "severity": "Severity",
+                "Value": "Count"
+              }
+            }
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40}
+      },
+      {
+        "id": 15,
+        "title": "Scout Performance Metrics",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(gemini_scout_processing_time_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile processing time",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(gemini_scout_cache_hits_total[5m]) / (rate(gemini_scout_cache_hits_total[5m]) + rate(gemini_scout_cache_misses_total[5m])) * 100",
+            "legendFormat": "Cache Hit Rate %",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40}
+      }
+    ]
+  }
+}

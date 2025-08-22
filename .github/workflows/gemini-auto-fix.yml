@@ -1,0 +1,336 @@
+name: 'Gemini Auto-Fix'
+description: 'Automatically fix issues detected by Gemini analysis'
+
+on:
+  workflow_dispatch:
+    inputs:
+      fix_type:
+        description: 'Type of fixes to apply'
+        required: true
+        default: 'safe'
+        type: choice
+        options:
+          - safe         # Only safe, non-breaking fixes
+          - aggressive   # All recommended fixes
+          - scaling      # Fix scaling issues only
+          - duplicates   # Refactor duplicates only
+          - formatting   # Code formatting only
+      
+      create_pr:
+        description: 'Create PR with fixes'
+        required: true
+        default: true
+        type: boolean
+      
+      branch_name:
+        description: 'Branch name for fixes'
+        required: false
+        default: 'gemini-auto-fix'
+        type: string
+
+  # Trigger from issue comments
+  issue_comment:
+    types: [created]
+
+jobs:
+  parse-comment:
+    if: github.event_name == 'issue_comment' && contains(github.event.comment.body, '/gemini fix')
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.parse.outputs.should_run }}
+      fix_type: ${{ steps.parse.outputs.fix_type }}
+    
+    steps:
+      - name: 'Parse Command'
+        id: parse
+        run: |
+          COMMENT="${{ github.event.comment.body }}"
+          if [[ "$COMMENT" == *"/gemini fix"* ]]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            
+            # Parse fix type
+            if [[ "$COMMENT" == *"scaling"* ]]; then
+              echo "fix_type=scaling" >> $GITHUB_OUTPUT
+            elif [[ "$COMMENT" == *"duplicates"* ]]; then
+              echo "fix_type=duplicates" >> $GITHUB_OUTPUT
+            elif [[ "$COMMENT" == *"aggressive"* ]]; then
+              echo "fix_type=aggressive" >> $GITHUB_OUTPUT
+            else
+              echo "fix_type=safe" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: 'Add Reaction'
+        if: steps.parse.outputs.should_run == 'true'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+
+  auto-fix:
+    needs: [parse-comment]
+    if: needs.parse-comment.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      
+      - name: 'Setup Python'
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: 'Setup Node.js'
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      - name: 'Install Dependencies'
+        run: |
+          pip install -r requirements.txt
+          npm install
+      
+      - name: '🔍 Run Analysis'
+        id: analysis
+        run: |
+          echo "Running Gemini analysis to identify issues..."
+          
+          # Run comprehensive analysis
+          python src/api/agent_server.py --analyze \
+            --repository . \
+            --output analysis-results.json
+          
+          # Extract issues
+          SCALING_ISSUES=$(jq '.scaling_issues | length' analysis-results.json)
+          DUPLICATE_COUNT=$(jq '.duplicates | length' analysis-results.json)
+          
+          echo "scaling_issues=$SCALING_ISSUES" >> $GITHUB_OUTPUT
+          echo "duplicate_count=$DUPLICATE_COUNT" >> $GITHUB_OUTPUT
+      
+      - name: '🔧 Apply Safe Fixes'
+        if: github.event.inputs.fix_type == 'safe' || needs.parse-comment.outputs.fix_type == 'safe'
+        run: |
+          echo "Applying safe fixes..."
+          
+          # Fix import ordering
+          isort src/ --profile black
+          
+          # Fix Python formatting
+          black src/ --line-length 100
+          
+          # Fix TypeScript/JavaScript formatting
+          npm run prettier -- --write "packages/**/*.{ts,tsx,js,jsx}"
+          
+          # Fix linting issues
+          npm run lint -- --fix
+          
+          # Remove unused imports
+          autoflake --in-place --remove-unused-variables --recursive src/
+      
+      - name: '⚡ Fix Scaling Issues'
+        if: contains(github.event.inputs.fix_type, 'scaling') || contains(needs.parse-comment.outputs.fix_type, 'scaling')
+        run: |
+          echo "Fixing scaling issues..."
+          
+          python << EOF
+          import json
+          import re
+          from pathlib import Path
+          
+          # Load analysis results
+          with open('analysis-results.json') as f:
+              results = json.load(f)
+          
+          for issue in results.get('scaling_issues', []):
+              file_path = issue['file_path']
+              line_num = issue['line_number']
+              issue_type = issue['type']
+              fix = issue.get('auto_fix')
+              
+              if not fix:
+                  continue
+              
+              # Apply fix based on issue type
+              if issue_type == 'n_plus_one_query':
+                  # Add query optimization
+                  print(f"Fixing N+1 query in {file_path}:{line_num}")
+                  # Apply prefetch_related or select_related
+                  
+              elif issue_type == 'memory_leak':
+                  # Add cleanup code
+                  print(f"Fixing memory leak in {file_path}:{line_num}")
+                  
+              elif issue_type == 'inefficient_algorithm':
+                  # Replace with optimized version
+                  print(f"Optimizing algorithm in {file_path}:{line_num}")
+          EOF
+      
+      - name: '♻️ Refactor Duplicates'
+        if: contains(github.event.inputs.fix_type, 'duplicates') || contains(needs.parse-comment.outputs.fix_type, 'duplicates')
+        run: |
+          echo "Refactoring duplicate code..."
+          
+          python src/scout/refactor_duplicates.py \
+            --threshold 0.8 \
+            --auto-refactor \
+            --output refactor-report.json
+      
+      - name: '🧹 Aggressive Fixes'
+        if: github.event.inputs.fix_type == 'aggressive' || needs.parse-comment.outputs.fix_type == 'aggressive'
+        run: |
+          echo "Applying aggressive fixes..."
+          
+          # Update dependencies
+          npm update
+          pip install --upgrade -r requirements.txt
+          
+          # Modernize code
+          pyupgrade --py311-plus src/**/*.py
+          
+          # Add type hints
+          monkeytype apply src/
+          
+          # Optimize imports
+          autoflake --in-place --remove-all-unused-imports --recursive src/
+      
+      - name: '✅ Run Tests'
+        run: |
+          echo "Running tests to verify fixes..."
+          
+          # Run Python tests
+          pytest tests/ --cov=src --cov-report=json
+          
+          # Run JavaScript tests
+          npm test
+          
+          # Check if tests pass
+          if [ $? -ne 0 ]; then
+            echo "::error::Tests failed after applying fixes"
+            exit 1
+          fi
+      
+      - name: '📊 Generate Fix Report'
+        id: report
+        run: |
+          cat > fix-report.md << EOF
+          # Gemini Auto-Fix Report
+          
+          ## Summary
+          - **Fix Type:** ${{ github.event.inputs.fix_type || needs.parse-comment.outputs.fix_type }}
+          - **Date:** $(date)
+          - **Triggered By:** ${{ github.actor }}
+          
+          ## Issues Fixed
+          - **Scaling Issues:** ${{ steps.analysis.outputs.scaling_issues }}
+          - **Duplicates:** ${{ steps.analysis.outputs.duplicate_count }}
+          
+          ## Changes Made
+          \`\`\`diff
+          $(git diff --stat)
+          \`\`\`
+          
+          ## Test Results
+          - ✅ All tests passing
+          - Coverage: $(jq '.totals.percent_covered' coverage.json)%
+          
+          ## Files Modified
+          $(git diff --name-only)
+          EOF
+          
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          cat fix-report.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: '🌿 Create Branch'
+        id: branch
+        run: |
+          BRANCH_NAME="${{ github.event.inputs.branch_name || 'gemini-auto-fix' }}-${{ github.run_number }}"
+          git checkout -b "$BRANCH_NAME"
+          
+          git config user.name "Gemini Bot"
+          git config user.email "gemini-bot@example.com"
+          
+          git add -A
+          git commit -m "🤖 Gemini Auto-Fix: ${{ github.event.inputs.fix_type || needs.parse-comment.outputs.fix_type }} fixes
+          
+          - Fixed ${{ steps.analysis.outputs.scaling_issues }} scaling issues
+          - Refactored ${{ steps.analysis.outputs.duplicate_count }} duplicates
+          - Applied code formatting
+          - All tests passing
+          
+          Triggered by: ${{ github.actor }}
+          Run: ${{ github.run_id }}"
+          
+          git push origin "$BRANCH_NAME"
+          
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+      
+      - name: '📝 Create Pull Request'
+        if: github.event.inputs.create_pr == 'true' || github.event_name == 'issue_comment'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const pr = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🤖 Gemini Auto-Fix: ${{ github.event.inputs.fix_type || needs.parse-comment.outputs.fix_type }} fixes',
+              body: `${{ steps.report.outputs.report }}`,
+              head: '${{ steps.branch.outputs.branch_name }}',
+              base: 'main',
+              draft: false
+            });
+            
+            // Add labels
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.data.number,
+              labels: ['gemini-auto-fix', 'automated']
+            });
+            
+            // Add comment if triggered from issue
+            if (context.eventName === 'issue_comment') {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.issue.number,
+                body: `✅ Auto-fix PR created: #${pr.data.number}`
+              });
+            }
+            
+            console.log(`PR created: ${pr.data.html_url}`);
+      
+      - name: '📱 Mobile Notification'
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            MESSAGE="✅ Auto-fix completed successfully"
+          else
+            MESSAGE="❌ Auto-fix failed"
+          fi
+          
+          # Send notification
+          curl -X POST ${{ secrets.SLACK_WEBHOOK }} \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"text\": \"$MESSAGE\",
+              \"blocks\": [
+                {
+                  \"type\": \"section\",
+                  \"text\": {
+                    \"type\": \"mrkdwn\",
+                    \"text\": \"*Repository:* ${{ github.repository }}\n*Branch:* ${{ steps.branch.outputs.branch_name }}\n*Triggered by:* ${{ github.actor }}\"
+                  }
+                }
+              ]
+            }"

@@ -22,7 +22,7 @@ describe('compressCommand', () => {
           getGeminiClient: () =>
             ({
               tryCompressChat: mockTryCompressChat,
-            }) as unknown as GeminiClient,
+            }) as Partial<GeminiClient>,
         },
       },
     });

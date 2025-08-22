@@ -1,0 +1,296 @@
+# OpenTelemetry Collector Configuration
+# Provides distributed tracing, metrics collection, and observability for Gemini Enterprise Architect
+
+receivers:
+  # OTLP receiver for application traces and metrics
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins:
+            - http://localhost:*
+            - https://*.gemini.ai
+          allowed_headers:
+            - "*"
+
+  # Prometheus receiver for existing metrics
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'gemini-agent-server'
+          static_configs:
+            - targets: ['agent-server:8000']
+          metrics_path: '/metrics'
+          scrape_interval: 30s
+          
+        - job_name: 'gemini-knowledge-base'
+          static_configs:
+            - targets: ['knowledge-base:8001']
+          metrics_path: '/metrics'
+          scrape_interval: 30s
+
+  # Jaeger receiver for legacy traces
+  jaeger:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:14250
+      thrift_http:
+        endpoint: 0.0.0.0:14268
+      thrift_compact:
+        endpoint: 0.0.0.0:6831
+
+  # Host metrics receiver
+  hostmetrics:
+    collection_interval: 30s
+    scrapers:
+      cpu:
+      disk:
+      filesystem:
+      memory:
+      network:
+      process:
+
+  # Docker stats receiver
+  docker_stats:
+    endpoint: unix:///var/run/docker.sock
+    collection_interval: 30s
+    timeout: 20s
+    api_version: 1.40
+
+processors:
+  # Batch processor for efficient data export
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+  # Memory limiter to prevent OOM
+  memory_limiter:
+    limit_mib: 512
+    spike_limit_mib: 128
+    check_interval: 5s
+
+  # Resource processor to add service info
+  resource:
+    attributes:
+      - key: service.name
+        from_attribute: service_name
+        action: insert
+      - key: service.version
+        value: "1.0.0"
+        action: insert
+      - key: deployment.environment
+        from_attribute: environment
+        action: insert
+      - key: service.namespace
+        value: "gemini-enterprise"
+        action: insert
+
+  # Span processor for trace enhancement
+  span:
+    name:
+      to_attributes:
+        rules:
+          - ^/api/v1/agent/request$
+          - ^/api/v1/scout/.*$
+          - ^/api/v1/knowledge/.*$
+
+  # Attributes processor for data enrichment
+  attributes:
+    actions:
+      # Add agent-specific attributes
+      - key: agent.type
+        from_attribute: agent_type
+        action: insert
+      - key: agent.session_id
+        from_attribute: session_id
+        action: insert
+      - key: agent.request_id
+        from_attribute: request_id
+        action: insert
+      
+      # Add business context
+      - key: business.cost_impact
+        from_attribute: cost_impact_usd
+        action: insert
+      - key: business.performance_impact
+        from_attribute: performance_impact_percent
+        action: insert
+      
+      # Add Scout-specific attributes
+      - key: scout.file_path
+        from_attribute: file_path
+        action: insert
+      - key: scout.language
+        from_attribute: language
+        action: insert
+      - key: scout.duplicate_count
+        from_attribute: duplicate_count
+        action: insert
+      
+      # Add Guardian-specific attributes
+      - key: guardian.validation_type
+        from_attribute: validation_type
+        action: insert
+      - key: guardian.rule_name
+        from_attribute: rule_name
+        action: insert
+      - key: guardian.severity
+        from_attribute: severity
+        action: insert
+
+  # Probabilistic sampler to control trace volume
+  probabilistic_sampler:
+    hash_seed: 22
+    sampling_percentage: 10
+
+  # Tail sampling for intelligent trace collection
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 50000
+    expected_new_traces_per_sec: 100
+    policies:
+      # Always sample error traces
+      - name: errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      
+      # Always sample slow traces (>2s)
+      - name: slow_traces
+        type: latency
+        latency:
+          threshold_ms: 2000
+      
+      # Sample 100% of agent request traces
+      - name: agent_requests
+        type: string_attribute
+        string_attribute:
+          key: span.name
+          values: ["/api/v1/agent/request"]
+          invert_match: false
+      
+      # Sample 50% of scout operations
+      - name: scout_operations
+        type: and
+        and:
+          and_sub_policy:
+            - name: scout_service
+              type: string_attribute
+              string_attribute:
+                key: service.name
+                values: ["scout"]
+            - name: scout_sampling
+              type: probabilistic
+              probabilistic:
+                sampling_percentage: 50
+      
+      # Sample 10% of normal traces
+      - name: normal_traces
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 10
+
+exporters:
+  # Jaeger exporter for trace visualization
+  jaeger:
+    endpoint: jaeger:14250
+    tls:
+      insecure: true
+
+  # Prometheus exporter for metrics
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    namespace: gemini
+    const_labels:
+      environment: ${ENVIRONMENT}
+
+  # OTLP exporter for external systems
+  otlp:
+    endpoint: https://api.honeycomb.io:443
+    headers:
+      "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
+      "x-honeycomb-dataset": "gemini-enterprise"
+
+  # Logging exporter for debugging
+  logging:
+    loglevel: info
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+  # File exporter for local development
+  file:
+    path: /tmp/otel-traces.json
+
+connectors:
+  # Span metrics connector to generate metrics from traces
+  spanmetrics:
+    histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms, 500ms, 1000ms, 1400ms, 2000ms, 5s, 10s, 20s, 40s, 60s]
+    dimensions:
+      - name: http.method
+        default: GET
+      - name: http.status_code
+      - name: agent.type
+      - name: service.name
+    exemplars:
+      enabled: true
+    operations:
+      - operation: agent_request
+        metric_name: agent_request_duration
+      - operation: scout_indexing
+        metric_name: scout_indexing_duration
+      - operation: guardian_validation
+        metric_name: guardian_validation_duration
+
+service:
+  telemetry:
+    logs:
+      level: info
+      development: true
+    metrics:
+      level: detailed
+      address: 0.0.0.0:8888
+
+  extensions: [health_check, pprof, zpages]
+  
+  pipelines:
+    # Traces pipeline
+    traces:
+      receivers: [otlp, jaeger]
+      processors: [memory_limiter, resource, attributes, span, tail_sampling, batch]
+      exporters: [jaeger, otlp, logging]
+    
+    # Metrics pipeline
+    metrics:
+      receivers: [otlp, prometheus, hostmetrics, docker_stats]
+      processors: [memory_limiter, resource, attributes, batch]
+      exporters: [prometheus, otlp, logging]
+    
+    # Logs pipeline  
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, attributes, batch]
+      exporters: [logging]
+    
+    # Span metrics pipeline (traces -> metrics)
+    metrics/spanmetrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheus]
+
+extensions:
+  # Health check extension
+  health_check:
+    endpoint: 0.0.0.0:13133
+    path: "/health"
+
+  # Performance profiling
+  pprof:
+    endpoint: 0.0.0.0:1777
+
+  # z-Pages for debugging
+  zpages:
+    endpoint: 0.0.0.0:55679

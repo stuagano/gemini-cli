@@ -1,0 +1,111 @@
+# Docker Compose for Gemini Slack Bot Development
+version: '3.8'
+
+services:
+  slack-bot:
+    build: .
+    ports:
+      - "3000:3000"
+      - "3001:3001"  # Webhook server
+    environment:
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
+      - SLACK_CLIENT_ID=${SLACK_CLIENT_ID}
+      - SLACK_CLIENT_SECRET=${SLACK_CLIENT_SECRET}
+      - SLACK_REDIRECT_URI=${SLACK_REDIRECT_URI}
+      - AGENT_SERVER_URL=${AGENT_SERVER_URL:-http://agent-server:8000}
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://slackbot:password@postgres:5432/slackbot
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - postgres
+      - agent-server
+    restart: unless-stopped
+    networks:
+      - gemini-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - gemini-network
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=slackbot
+      - POSTGRES_USER=slackbot
+      - POSTGRES_PASSWORD=password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    networks:
+      - gemini-network
+
+  # Agent server (reference to main application)
+  agent-server:
+    image: gemini-agent-server:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - BMAD_PROJECT_ROOT=/workspace
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ../:/workspace
+    restart: unless-stopped
+    networks:
+      - gemini-network
+
+  # Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - gemini-network
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    restart: unless-stopped
+    networks:
+      - gemini-network
+
+volumes:
+  redis_data:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  gemini-network:
+    driver: bridge

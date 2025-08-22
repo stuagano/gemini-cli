@@ -5,6 +5,8 @@
  */
 
 import { vi, describe, it, expect, beforeEach, Mock } from 'vitest';
+import { GeminiClient } from '@google/gemini-cli-core';
+import { ChatSession } from '@google/genai';
 import { copyCommand } from './copyCommand.js';
 import { type CommandContext } from './types.js';
 import { createMockCommandContext } from '../../test-utils/mockCommandContext.js';
@@ -30,16 +32,17 @@ describe('copyCommand', () => {
     mockContext = createMockCommandContext({
       services: {
         config: {
-          getGeminiClient: () => ({
-            getChat: mockGetChat,
-          }),
+          getGeminiClient: () =>
+            ({
+              getChat: mockGetChat,
+            } as Partial<GeminiClient>),
         },
       },
     });
 
     mockGetChat.mockReturnValue({
       getHistory: mockGetHistory,
-    });
+    } as Partial<ChatSession>);
   });
 
   it('should return info message when no history is available', async () => {

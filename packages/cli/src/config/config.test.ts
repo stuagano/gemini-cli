@@ -9,7 +9,7 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ShellTool, EditTool, WriteFileTool } from '@google/gemini-cli-core';
-import { loadCliConfig, parseArguments } from './config.js';
+import { loadCliConfig, parseArguments, CliArgs } from './config.js';
 import { Settings } from './settings.js';
 import { Extension } from './extension.js';
 import * as ServerConfig from '@google/gemini-cli-core';
@@ -1090,8 +1090,7 @@ describe('Approval mode tool exclusion logic', () => {
   });
 
   it('should throw an error for invalid approval mode values in loadCliConfig', async () => {
-    // Create a mock argv with an invalid approval mode that bypasses argument parsing validation
-    const invalidArgv: Partial<CliArgs> & { approvalMode: string } = {
+    const invalidArgv: Partial<CliArgs> = {
       approvalMode: 'invalid_mode',
       promptInteractive: '',
       prompt: '',

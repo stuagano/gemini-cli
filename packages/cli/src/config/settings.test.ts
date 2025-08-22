@@ -910,13 +910,13 @@ describe('Settings Loading and Merging', () => {
 
       const settings = loadSettings(MOCK_WORKSPACE_DIR);
       // @ts-expect-error: dynamic property for test
-      expect(settings.user.settings.apiKey).toBe('user_api_key_from_env');
+      expect((settings.user.settings as any).apiKey).toBe('user_api_key_from_env');
       // @ts-expect-error: dynamic property for test
-      expect(settings.user.settings.someUrl).toBe(
+      expect((settings.user.settings as any).someUrl).toBe(
         'https://test.com/user_api_key_from_env',
       );
       // @ts-expect-error: dynamic property for test
-      expect(settings.merged.apiKey).toBe('user_api_key_from_env');
+      expect((settings.merged as any).apiKey).toBe('user_api_key_from_env');
       delete process.env['TEST_API_KEY'];
     });
 
@@ -938,14 +938,14 @@ describe('Settings Loading and Merging', () => {
       );
 
       const settings = loadSettings(MOCK_WORKSPACE_DIR);
-      expect(settings.workspace.settings.endpoint).toBe(
+      expect((settings.workspace.settings as any).endpoint).toBe(
         'workspace_endpoint_from_env/api',
       );
-      expect(settings.workspace.settings.nested.value).toBe(
+      expect((settings.workspace.settings as any).nested.value).toBe(
         'workspace_endpoint_from_env',
       );
       // @ts-expect-error: dynamic property for test
-      expect(settings.merged.endpoint).toBe('workspace_endpoint_from_env/api');
+      expect((settings.merged as any).endpoint).toBe('workspace_endpoint_from_env/api');
       delete process.env['WORKSPACE_ENDPOINT'];
     });
 
@@ -975,16 +975,16 @@ describe('Settings Loading and Merging', () => {
       const settings = loadSettings(MOCK_WORKSPACE_DIR);
 
       // @ts-expect-error: dynamic property for test
-      expect(settings.user.settings.configValue).toBe(
+      expect((settings.user.settings as any).configValue).toBe(
         'user_value_for_user_read',
       );
       // @ts-expect-error: dynamic property for test
-      expect(settings.workspace.settings.configValue).toBe(
+      expect((settings.workspace.settings as any).configValue).toBe(
         'workspace_value_for_workspace_read',
       );
       // Merged should take workspace's resolved value
       // @ts-expect-error: dynamic property for test
-      expect(settings.merged.configValue).toBe(
+      expect((settings.merged as any).configValue).toBe(
         'workspace_value_for_workspace_read',
       );
 
@@ -1021,14 +1021,14 @@ describe('Settings Loading and Merging', () => {
 
       const settings = loadSettings(MOCK_WORKSPACE_DIR);
 
-      expect(settings.user.settings.configValue).toBe(
+      expect((settings.user.settings as any).configValue).toBe(
         'user_value_for_user_read',
       );
-      expect(settings.workspace.settings.configValue).toBe(
+      expect((settings.workspace.settings as any).configValue).toBe(
         'workspace_value_for_workspace_read',
       );
       // Merged should take workspace's resolved value
-      expect(settings.merged.configValue).toBe(
+      expect((settings.merged as any).configValue).toBe(
         'workspace_value_for_workspace_read',
       );
 
@@ -1066,16 +1066,16 @@ describe('Settings Loading and Merging', () => {
       const settings = loadSettings(MOCK_WORKSPACE_DIR);
 
       // @ts-expect-error: dynamic property for test
-      expect(settings.system.settings.configValue).toBe(
+      expect((settings.system.settings as any).configValue).toBe(
         'system_value_for_system_read',
       );
       // @ts-expect-error: dynamic property for test
-      expect(settings.workspace.settings.configValue).toBe(
+      expect((settings.workspace.settings as any).configValue).toBe(
         'workspace_value_for_workspace_read',
       );
       // Merged should take system's resolved value
       // @ts-expect-error: dynamic property for test
-      expect(settings.merged.configValue).toBe('system_value_for_system_read');
+      expect((settings.merged as any).configValue).toBe('system_value_for_system_read');
 
       // Restore original environment variable state
       if (originalSharedVar !== undefined) {
@@ -1141,8 +1141,8 @@ describe('Settings Loading and Merging', () => {
       );
 
       const settings = loadSettings(MOCK_WORKSPACE_DIR);
-      expect(settings.user.settings.apiKey).toBe('$UNDEFINED_VAR');
-      expect(settings.merged.apiKey).toBe('$UNDEFINED_VAR');
+      expect((settings.user.settings as any).apiKey).toBe('$UNDEFINED_VAR');
+      expect((settings.merged as any).apiKey).toBe('$UNDEFINED_VAR');
     });
 
     it('should resolve multiple environment variables in a single string', () => {
@@ -1160,7 +1160,7 @@ describe('Settings Loading and Merging', () => {
         },
       );
       const settings = loadSettings(MOCK_WORKSPACE_DIR);
-      expect(settings.user.settings.path).toBe('/path/valueA/valueB/end');
+      expect((settings.user.settings as any).path).toBe('/path/valueA/valueB/end');
       delete process.env['VAR_A'];
       delete process.env['VAR_B'];
     });
@@ -1221,18 +1221,18 @@ describe('Settings Loading and Merging', () => {
 
       const settings = loadSettings(MOCK_WORKSPACE_DIR);
 
-      expect(settings.user.settings.nullVal).toBeNull();
-      expect(settings.user.settings.trueVal).toBe(true);
-      expect(settings.user.settings.falseVal).toBe(false);
-      expect(settings.user.settings.numberVal).toBe(123.45);
-      expect(settings.user.settings.stringVal).toBe('env_string_value');
-      expect(settings.user.settings.undefinedVal).toBeUndefined();
+      expect((settings.user.settings as any).nullVal).toBeNull();
+      expect((settings.user.settings as any).trueVal).toBe(true);
+      expect((settings.user.settings as any).falseVal).toBe(false);
+      expect((settings.user.settings as any).numberVal).toBe(123.45);
+      expect((settings.user.settings as any).stringVal).toBe('env_string_value');
+      expect((settings.user.settings as any).undefinedVal).toBeUndefined();
 
-      expect(settings.user.settings.nestedObj.nestedNull).toBeNull();
-      expect(settings.user.settings.nestedObj.nestedBool).toBe(true);
-      expect(settings.user.settings.nestedObj.nestedNum).toBe(0);
-      expect(settings.user.settings.nestedObj.nestedString).toBe('literal');
-      expect(settings.user.settings.nestedObj.anotherEnv).toBe(
+      expect((settings.user.settings as any).nestedObj.nestedNull).toBeNull();
+      expect((settings.user.settings as any).nestedObj.nestedBool).toBe(true);
+      expect((settings.user.settings as any).nestedObj.nestedNum).toBe(0);
+      expect((settings.user.settings as any).nestedObj.nestedString).toBe('literal');
+      expect((settings.user.settings as any).nestedObj.anotherEnv).toBe(
         'env_string_nested_value',
       );
 
@@ -1258,7 +1258,7 @@ describe('Settings Loading and Merging', () => {
       );
 
       const settings = loadSettings(MOCK_WORKSPACE_DIR);
-      expect(settings.user.settings.serverAddress).toBe('myhost:9090/api');
+      expect((settings.user.settings as any).serverAddress).toBe('myhost:9090/api');
 
       delete process.env['TEST_HOST'];
       delete process.env['TEST_PORT'];
