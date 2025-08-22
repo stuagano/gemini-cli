@@ -22,3 +22,59 @@ Makefile eol=lf
 *.eot binary
 *.ttf binary
 *.otf binary
+*.db binary
+
+# ==============================================================================
+# Merge strategies for better conflict resolution
+# ==============================================================================
+
+# Always use ours for protected configuration files
+CLAUDE.md merge=ours
+SOURCE_TREE.md merge=ours
+.env.* merge=ours
+**/bmad-* merge=ours
+
+# Documentation - prefer manual merge
+*.md merge=union
+docs/**/*.md merge=union
+
+# Test files - generally safe to merge
+*.test.ts merge=union
+*.test.tsx merge=union
+*.spec.ts merge=union
+*.spec.tsx merge=union
+
+# Generated files - always regenerate
+dist/** -merge
+build/** -merge
+out/** -merge
+*.min.js -merge
+*.min.css -merge
+
+# Vendor files - prefer upstream
+node_modules/** -merge
+vendor/** -merge
+
+# BMAD and custom features - always preserve ours
+.bmad-*/** merge=ours
+.claude/** merge=ours
+.crush/** merge=ours
+.scout/** merge=ours
+github-app/** merge=ours
+slack-bot/** merge=ours
+src/agents/** merge=ours
+src/api/** merge=ours
+src/knowledge/** merge=ours
+src/monitoring/** merge=ours
+terraform/** merge=ours
+k8s/** merge=ours
+docker/** merge=ours
+monitoring/** merge=ours
+
+# GitHub workflows - selective merge
+.github/workflows/gemini-*.yml merge=ours
+.github/workflows/ci.yml text merge=union
+
+# Cloud build files - preserve ours
+cloudbuild*.yaml merge=ours
+docker-compose*.yml merge=ours
