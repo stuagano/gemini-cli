@@ -47,6 +47,8 @@ packages/vscode-ide-companion/*.vsix
 .scout/index.db
 .env
 .env.*
+!.env.*.example
+.gemini/settings.json
 
 # GHA credentials
 gha-creds-*.json
