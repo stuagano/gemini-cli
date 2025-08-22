@@ -126,6 +126,63 @@ This project uses **Vitest** as its primary testing framework. Follow these conv
 - Focus on the "why" not just the "what"
 - Follow repository commit style conventions
 
+### Upstream Sync Management
+
+This fork maintains sync with the upstream `google-gemini/gemini-cli` repository while preserving all custom enterprise features.
+
+#### Quick Sync
+```bash
+# Run the sync manager
+./scripts/sync-upstream.sh
+
+# Or use the alias if configured
+sync
+
+# Check sync status
+git rev-list --count HEAD...upstream/main
+```
+
+#### Protected Features
+The following directories and files are protected during upstream merges:
+- `.bmad-*` directories - BMAD methodology files
+- `.claude/`, `.crush/`, `.scout/` - Custom tool configurations
+- `src/agents/`, `src/api/`, `src/knowledge/`, `src/monitoring/` - Enterprise features
+- `github-app/`, `slack-bot/` - Integrations
+- `terraform/`, `k8s/`, `docker/` - Infrastructure
+- `CLAUDE.md`, `SOURCE_TREE.md` - Project documentation
+
+#### What to Pull from Upstream
+**Always Pull:**
+- Core CLI bug fixes and improvements
+- Tool updates (grep, file system, web tools)
+- Test infrastructure improvements
+- Security patches
+
+**Review Carefully:**
+- Configuration changes
+- Package dependency updates
+- UI/UX changes that might conflict
+
+**Never Pull (Keep Your Version):**
+- Custom features and integrations
+- BMAD methodology files
+- Enterprise documentation
+- Cloud deployment configurations
+
+#### Sync Strategies
+1. **Full Merge** (Recommended for regular syncs): `./scripts/sync-upstream.sh` → Option 1
+2. **Cherry-pick** (For selective updates): `./scripts/sync-upstream.sh` → Option 2
+3. **Analyze Only** (See what changed): `./scripts/sync-upstream.sh` → Option 3
+
+#### Post-Sync Checklist
+- [ ] Run `npm install` to update dependencies
+- [ ] Run `npm run build` to verify build
+- [ ] Test BMAD features still work
+- [ ] Verify agent server: `./start_server.sh`
+- [ ] Review changes: `git log --oneline upstream/main ^HEAD`
+
+See `SYNC_GUIDE.md` for detailed sync instructions.
+
 ## File Naming Conventions
 - Use hyphens instead of underscores (e.g., `my-file.ts` not `my_file.ts`)
 - Test files: `*.test.ts` or `*.test.tsx`
