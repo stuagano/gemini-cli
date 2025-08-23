@@ -75,9 +75,30 @@ npm install -g @google/gemini-cli@nightly
 
 ## 📋 Key Features
 
-### 🆕 Enterprise Architecture Extension
+### 🆕 VS Code Extension - Documentation & Project Manager
+Comprehensive IDE integration for documentation management and project tracking:
+
+#### Quick Install
+```bash
+# One-click installation
+cd packages/vscode-extension && npm install && npm run compile
+
+# Or use the installer script
+./scripts/install-vscode-extension.sh
+```
+
+#### Features
+- **📊 Documentation Status Panel**: Real-time progress tracking with visual indicators
+- **🎯 Epics & Stories Management**: Hierarchical project tracking with auto-completion
+- **🗄️ RAG Datastore Integration**: Upload and search documentation with AI
+- **📝 Smart Templates**: Pre-built templates for common documents
+- **📈 Rich Dashboard**: Comprehensive metrics and quick actions
+
+📚 **[VS Code Extension Guide →](packages/vscode-extension/README.md)**
+
+### 🏢 Enterprise Architecture Extension
 - **7 Specialized AI Agents**: Analyst, Architect, PM, Developer, QA, Scout, PO
-- **BMAD Methodology**: Documentation-driven development with business value tracking
+- **GCP Professional Development Methodology**: Documentation-driven development with business value tracking
 - **Scout-First Architecture**: Duplicate prevention and code analysis
 - **Guardian Continuous Validation**: Real-time security and quality checks
 - **Killer Demo**: Production scaling issue detection
@@ -423,7 +444,6 @@ See our [Contributing Guide](./CONTRIBUTING.md) for development setup, coding st
 Check our [Official Roadmap](https://github.com/orgs/google-gemini/projects/11/) for planned features and priorities.
 
 ## 📖 Resources
-
 - **[Official Roadmap](./ROADMAP.md)** - See what's coming next
 - **[NPM Package](https://www.npmjs.com/package/@google/gemini-cli)** - Package registry
 - **[GitHub Issues](https://github.com/google-gemini/gemini-cli/issues)** - Report bugs or request features

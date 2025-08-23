@@ -2,15 +2,15 @@
 
 This directory contains the epics and user stories for the Gemini Enterprise Architect project.
 
-## BMAD Status & Project Overview
+## GCP Professional Development Status & Project Overview
 
 ### 🎯 High-Level Project Documentation
 
 #### Business & Strategy
 - **[Business Case](../docs/business-case.md)** - ROI analysis, investment justification, 3-year projections
 - **[Value Stream Map](../docs/value-stream-map.md)** - End-to-end value delivery visualization
-- **[BMAD Success Metrics](../docs/bmad-success-metrics.md)** - KPIs and success criteria
-- **[BMAD Operations Guide](../docs/bmad-operations-guide.md)** - Operational procedures and guidelines
+- **[GCP Professional Development Success Metrics](../docs/gcp-success-metrics.md)** - KPIs and success criteria
+- **[GCP Professional Development Operations Guide](../docs/gcp-operations-guide.md)** - Operational procedures and guidelines
 
 #### Technical Documentation
 - **[Architecture Overview](../docs/architecture.md)** - System architecture and design decisions
@@ -31,7 +31,7 @@ This directory contains the epics and user stories for the Gemini Enterprise Arc
 - **[PRD](../PRD.md)** - Product Requirements Document
 - **[Source Tree](../SOURCE_TREE.md)** - Codebase structure documentation
 
-### 📊 BMAD Validation Status
+### 📊 GCP Professional Development Validation Status
 - ✅ Business Case with ROI - **COMPLETE**
 - ✅ Cloud Cost Estimates - **COMPLETE** 
 - ✅ Real-time Pricing - **INTEGRATED**
@@ -39,15 +39,33 @@ This directory contains the epics and user stories for the Gemini Enterprise Arc
 - ✅ Security Model - **DEFINED**
 - ✅ Testing Strategy - **DEFINED**
 
+## 🆕 VS Code Extension - Documentation & Project Manager
+
+### Quick Install
+```bash
+./scripts/install-vscode-extension.sh
+```
+
+### Documentation
+- **[Quick Start Guide](../packages/vscode-extension/QUICK_START.md)** - Get running in 2 minutes
+- **[Full Documentation](../packages/vscode-extension/README.md)** - Complete feature reference
+- **[Features Overview](../packages/vscode-extension/FEATURES.md)** - What's implemented
+
+### Key Features
+- 📊 **Documentation Status Panel** - Real-time progress tracking
+- 🎯 **Epics & Stories Management** - Hierarchical project tracking
+- 🗄️ **RAG Datastore Integration** - AI-powered documentation search
+- 📈 **Rich Dashboard** - Comprehensive metrics and actions
+
 ## Directory Structure
 
 - **Epics:**
-  - [BMAD Integration](./epic-bmad-integration.md) - Business Model Agent Development methodology implementation
-  - [VS Code Extension](./epic-vs-code-extension.md) - VS Code extension with BMAD validation and features
+  - [GCP Professional Development Integration](./epic-gcp-integration.md) - Business Model Agent Development methodology implementation
+  - [VS Code Extension](./epic-vs-code-extension.md) - VS Code extension with documentation management (**IMPLEMENTED**)
 
 - **Stories:**
   - [Story 001: Tree Providers](./story-001-tree-providers.md) - VS Code tree view providers
-  - [Story 002: BMAD Validation](./story-002-bmad-validation.md) - BMAD documentation validation
+  - [Story 002: GCP Professional Development Validation](./story-002-gcp-validation.md) - GCP Professional Development documentation validation
   - [Story 003: AI Personas](./story-003-ai-personas.md) - Business value AI personas
   - [Story 004: Business Case](./story-004-business-case.md) - Business case documentation
   - [Story 005: Cloud Pricing](./story-005-cloud-pricing.md) - Real-time cloud pricing integration
