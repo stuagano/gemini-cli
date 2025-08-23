@@ -1,0 +1,256 @@
+{
+  "name": "gemini-docs-manager",
+  "displayName": "Gemini Documentation & Project Manager",
+  "description": "Comprehensive documentation status, epics/stories tracking, and RAG integration for Gemini CLI",
+  "version": "1.0.0",
+  "publisher": "gemini-cli",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/stuagano/gemini-cli"
+  },
+  "bugs": {
+    "url": "https://github.com/stuagano/gemini-cli/issues"
+  },
+  "homepage": "https://github.com/stuagano/gemini-cli/tree/main/packages/vscode-extension",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Programming Languages",
+    "Snippets"
+  ],
+  "keywords": [
+    "documentation",
+    "project management",
+    "epics",
+    "stories",
+    "RAG",
+    "AI",
+    "gemini"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gemini-manager",
+          "title": "Gemini Manager",
+          "icon": "$(book)"
+        }
+      ]
+    },
+    "views": {
+      "gemini-manager": [
+        {
+          "id": "documentation-status",
+          "name": "Documentation Status",
+          "icon": "$(checklist)",
+          "contextualTitle": "Documentation Progress"
+        },
+        {
+          "id": "epics-stories",
+          "name": "Epics & Stories",
+          "icon": "$(project)",
+          "contextualTitle": "Project Tracking"
+        },
+        {
+          "id": "rag-datastore",
+          "name": "RAG Datastore",
+          "icon": "$(database)",
+          "contextualTitle": "Knowledge Base"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "gemini.refreshDocStatus",
+        "title": "Refresh Documentation Status",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gemini.openDocument",
+        "title": "Open Document",
+        "icon": "$(file)"
+      },
+      {
+        "command": "gemini.editDocument",
+        "title": "Edit Document",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "gemini.uploadToRAG",
+        "title": "Upload to RAG Datastore",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "gemini.uploadFolderToRAG",
+        "title": "Upload Folder to RAG",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "gemini.refreshEpics",
+        "title": "Refresh Epics & Stories",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gemini.createEpic",
+        "title": "Create New Epic",
+        "icon": "$(add)"
+      },
+      {
+        "command": "gemini.createStory",
+        "title": "Create New Story",
+        "icon": "$(add)"
+      },
+      {
+        "command": "gemini.markStoryComplete",
+        "title": "Mark Story Complete",
+        "icon": "$(check)"
+      },
+      {
+        "command": "gemini.viewRAGStatus",
+        "title": "View RAG Status",
+        "icon": "$(info)"
+      },
+      {
+        "command": "gemini.searchRAG",
+        "title": "Search Knowledge Base",
+        "icon": "$(search)"
+      },
+      {
+        "command": "gemini.showDashboard",
+        "title": "Show Documentation Dashboard",
+        "icon": "$(dashboard)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "gemini.refreshDocStatus",
+          "when": "view == documentation-status",
+          "group": "navigation"
+        },
+        {
+          "command": "gemini.refreshEpics",
+          "when": "view == epics-stories",
+          "group": "navigation"
+        },
+        {
+          "command": "gemini.createEpic",
+          "when": "view == epics-stories",
+          "group": "navigation"
+        },
+        {
+          "command": "gemini.uploadFolderToRAG",
+          "when": "view == rag-datastore",
+          "group": "navigation"
+        },
+        {
+          "command": "gemini.searchRAG",
+          "when": "view == rag-datastore",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "gemini.openDocument",
+          "when": "view == documentation-status && viewItem == document",
+          "group": "inline"
+        },
+        {
+          "command": "gemini.editDocument",
+          "when": "view == documentation-status && viewItem == document",
+          "group": "inline"
+        },
+        {
+          "command": "gemini.uploadToRAG",
+          "when": "view == documentation-status && viewItem == document",
+          "group": "context"
+        },
+        {
+          "command": "gemini.createStory",
+          "when": "view == epics-stories && viewItem == epic",
+          "group": "inline"
+        },
+        {
+          "command": "gemini.markStoryComplete",
+          "when": "view == epics-stories && viewItem == story-incomplete",
+          "group": "inline"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "gemini.uploadToRAG",
+          "when": "resourceExtname == .md",
+          "group": "gemini"
+        },
+        {
+          "command": "gemini.uploadFolderToRAG",
+          "when": "explorerResourceIsFolder",
+          "group": "gemini"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Gemini Documentation Manager",
+      "properties": {
+        "gemini.documentationPath": {
+          "type": "string",
+          "default": "docs",
+          "description": "Path to documentation folder"
+        },
+        "gemini.epicsPath": {
+          "type": "string",
+          "default": "docs/tasks",
+          "description": "Path to epics and stories"
+        },
+        "gemini.ragServerUrl": {
+          "type": "string",
+          "default": "http://localhost:2000",
+          "description": "RAG server URL"
+        },
+        "gemini.autoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-refresh documentation status"
+        },
+        "gemini.refreshInterval": {
+          "type": "number",
+          "default": 30000,
+          "description": "Refresh interval in milliseconds"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "20.x",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "@vscode/test-electron": "^2.3.8",
+    "eslint": "^8.56.0",
+    "glob": "^10.3.10",
+    "mocha": "^10.2.0",
+    "typescript": "^5.3.3",
+    "vsce": "^2.15.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.5",
+    "marked": "^11.1.1"
+  }
+}
