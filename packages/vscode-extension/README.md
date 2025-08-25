@@ -161,18 +161,23 @@ To add epic/story tracking:
 - `gemini.searchRAG` - Search knowledge base
 - `gemini.checkRAGServer` - Check server status
 
-## 🤖 RAG Server (Optional)
+## 🤖 Server Integration (Optional)
 
-The RAG integration is completely optional. If you don't have a RAG server:
-- The RAG panel will show helpful getting-started info
-- All other features work normally
-- No errors or warnings
+### Extension Independence
+The extension works completely **standalone** - no server required! Core features include:
+- ✅ Documentation status tracking  
+- ✅ Epic & story management
+- ✅ Progress visualization
+- ✅ Document templates
+- ✅ File organization
 
-To enable RAG features, ensure your server provides:
-- `GET /documents` - List documents
-- `POST /upload` - Upload documents  
-- `GET /search?q=query` - Search
-- `GET /status` - Server status
+### Optional Server Features
+For advanced capabilities, the extension integrates with the Gemini CLI server:
+- 🔍 **RAG Server**: Document upload, semantic search, knowledge management
+- 🤖 **AI Agents**: Enhanced Analyst, Architect, Developer, QA, Scout, PO personas
+- 🌐 **Vertex AI**: Advanced search and document processing
+
+**See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for detailed deployment options.**
 
 ## 🚀 Installation for Other Projects
 
