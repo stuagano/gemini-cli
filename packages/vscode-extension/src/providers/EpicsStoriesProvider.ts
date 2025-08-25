@@ -59,7 +59,9 @@ export class EpicsStoriesProvider implements vscode.TreeDataProvider<ProjectItem
         }
 
         const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
-        const tasksPath = path.join(workspaceRoot, 'docs', 'tasks');
+        const config = vscode.workspace.getConfiguration('gemini');
+        const epicsPath = config.get<string>('epicsPath', 'docs/tasks');
+        const tasksPath = path.join(workspaceRoot, epicsPath);
 
         if (!fs.existsSync(tasksPath)) {
             return;
@@ -236,13 +238,25 @@ export class ProjectItem extends vscode.TreeItem {
         
         if (contextValue === 'epic' || contextValue.startsWith('story')) {
             const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
-            if (workspaceRoot) {
-                const filePath = path.join(workspaceRoot, 'docs', 'tasks', this.file);
-                this.command = {
-                    command: 'vscode.open',
-                    title: 'Open',
-                    arguments: [vscode.Uri.file(filePath)]
-                };
+            if (workspaceRoot && this.file && typeof this.file === 'string') {
+                try {
+                    const config = vscode.workspace.getConfiguration('gemini');
+                    const epicsPath = config.get<string>('epicsPath', 'docs/tasks');
+                    // Sanitize file name to prevent URI issues
+                    const sanitizedFile = this.file.replace(/[<>:"|?*]/g, '_');
+                    const filePath = path.join(workspaceRoot, epicsPath, sanitizedFile);
+                    
+                    // Ensure the path exists before creating URI
+                    if (fs.existsSync(filePath)) {
+                        this.command = {
+                            command: 'vscode.open',
+                            title: 'Open',
+                            arguments: [vscode.Uri.file(filePath)]
+                        };
+                    }
+                } catch (error) {
+                    console.error('Failed to create file URI for:', this.file, error);
+                }
             }
         }
     }

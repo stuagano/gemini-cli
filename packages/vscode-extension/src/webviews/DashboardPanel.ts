@@ -76,7 +76,16 @@ export class DashboardPanel {
                         vscode.commands.executeCommand('gemini.openDocument', message.path);
                         return;
                     case 'uploadToRAG':
-                        vscode.commands.executeCommand('gemini.uploadToRAG', vscode.Uri.file(message.path));
+                        if (message.path && typeof message.path === 'string') {
+                            try {
+                                vscode.commands.executeCommand('gemini.uploadFileToRAG', vscode.Uri.file(message.path));
+                            } catch (error) {
+                                console.error('Failed to create URI from path:', message.path, error);
+                                vscode.commands.executeCommand('gemini.uploadFileToRAG');
+                            }
+                        } else {
+                            vscode.commands.executeCommand('gemini.uploadFileToRAG');
+                        }
                         return;
                 }
             },

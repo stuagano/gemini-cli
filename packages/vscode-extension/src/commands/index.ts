@@ -16,6 +16,7 @@ export function registerCommands(
     docService: DocumentationService,
     ragService: RAGService
 ) {
+    console.log('📋 COMMANDS: Starting command registration...');
     // Documentation commands
     context.subscriptions.push(
         vscode.commands.registerCommand('gemini.refreshDocStatus', () => {
@@ -97,8 +98,10 @@ export function registerCommands(
 
             const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
             if (workspaceRoot) {
+                const config = vscode.workspace.getConfiguration('gemini');
+                const epicsPath = config.get<string>('epicsPath', 'docs/tasks');
                 const fileName = `epic-${epicName.toLowerCase().replace(/\s+/g, '-')}.md`;
-                const filePath = path.join(workspaceRoot, 'docs', 'tasks', fileName);
+                const filePath = path.join(workspaceRoot, epicsPath, fileName);
                 
                 const template = `# Epic: ${epicName}
 
@@ -177,9 +180,11 @@ export function registerCommands(
 
             const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
             if (workspaceRoot) {
+                const config = vscode.workspace.getConfiguration('gemini');
+                const epicsPath = config.get<string>('epicsPath', 'docs/tasks');
                 const storyNumber = Date.now().toString().slice(-3);
                 const fileName = `story-${storyNumber}-${storyTitle.toLowerCase().replace(/\s+/g, '-')}.md`;
-                const filePath = path.join(workspaceRoot, 'docs', 'tasks', fileName);
+                const filePath = path.join(workspaceRoot, epicsPath, fileName);
                 
                 const template = `# Story ${storyNumber}: ${storyTitle}
 
@@ -240,7 +245,9 @@ As a [user type], I want [feature] so that [benefit]
             if (item && item.story) {
                 const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
                 if (workspaceRoot) {
-                    const filePath = path.join(workspaceRoot, 'docs', 'tasks', item.story.file);
+                    const config = vscode.workspace.getConfiguration('gemini');
+                    const epicsPath = config.get<string>('epicsPath', 'docs/tasks');
+                    const filePath = path.join(workspaceRoot, epicsPath, item.story.file);
                     let content = fs.readFileSync(filePath, 'utf8');
                     
                     // Update story status
@@ -263,7 +270,27 @@ As a [user type], I want [feature] so that [benefit]
 
     // RAG commands
     context.subscriptions.push(
-        vscode.commands.registerCommand('gemini.uploadToRAG', async (resourceUri?: vscode.Uri) => {
+        vscode.commands.registerCommand('gemini.viewRAGDocument', async (document?: any) => {
+            if (document && document.id) {
+                try {
+                    const content = await ragService.getDocumentContent(document.id);
+                    const doc = await vscode.workspace.openTextDocument({
+                        content: `# ${document.name}\n\n**Type**: ${document.type}\n**Size**: ${document.size} bytes\n**Chunks**: ${document.chunks}\n**Indexed**: ${document.indexed ? 'Yes' : 'No'}\n**Uploaded**: ${new Date(document.uploadedAt).toLocaleString()}\n\n---\n\n${content}`,
+                        language: document.type === 'markdown' ? 'markdown' : 'text'
+                    });
+                    vscode.window.showTextDocument(doc);
+                } catch (error: any) {
+                    const sanitizedError = (error.message || String(error)).replace(/[^\w\s:\/.-]/g, '');
+                    vscode.window.showErrorMessage(`Failed to view document: ${sanitizedError}`);
+                }
+            } else {
+                vscode.window.showErrorMessage('No document selected');
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('gemini.uploadFileToRAG', async (resourceUri?: vscode.Uri) => {
             let filePath: string | undefined;
             
             if (resourceUri) {
@@ -290,8 +317,10 @@ As a [user type], I want [feature] so that [benefit]
         })
     );
 
+    console.log('📋 COMMANDS: Registering uploadFolderToRAG command...');
     context.subscriptions.push(
         vscode.commands.registerCommand('gemini.uploadFolderToRAG', async (resourceUri?: vscode.Uri) => {
+            console.log('📋 UPLOADFOLDER: Command executed', resourceUri);
             let folderPath: string | undefined;
             
             if (resourceUri) {
@@ -376,6 +405,72 @@ Total Size: ${Math.round(documents.reduce((sum, d) => sum + d.size, 0) / 1024)}K
         })
     );
 
+    // URL upload command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('gemini.uploadUrlToRAG', async () => {
+            const url = await vscode.window.showInputBox({
+                prompt: 'Enter URL to fetch and index',
+                placeHolder: 'https://example.com/documentation',
+                validateInput: (value) => {
+                    try {
+                        new URL(value);
+                        return null;
+                    } catch {
+                        return 'Please enter a valid URL';
+                    }
+                }
+            });
+            
+            if (!url) return;
+            
+            vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: 'Fetching content from URL...',
+                cancellable: false
+            }, async (progress) => {
+                try {
+                    await ragService.uploadFromUrl(url);
+                    vscode.window.showInformationMessage(`Successfully uploaded content from ${url}`);
+                    ragProvider.refresh();
+                } catch (error: any) {
+                    const sanitizedError = (error.message || String(error)).replace(/[^\w\s:\/.-]/g, '');
+                    vscode.window.showErrorMessage(`Failed to upload from URL: ${sanitizedError}`);
+                }
+            });
+        })
+    );
+
+    // Server check command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('gemini.checkRAGServer', async () => {
+            vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: 'Checking RAG server...',
+                cancellable: false
+            }, async (progress) => {
+                const isOnline = await ragService.checkServerStatus();
+                if (isOnline) {
+                    const documents = await ragService.getDocuments();
+                    vscode.window.showInformationMessage(
+                        `✅ RAG Server is online! Found ${documents.length} documents.`
+                    );
+                    ragProvider.refresh();
+                } else {
+                    const startServer = 'Start Server';
+                    const result = await vscode.window.showWarningMessage(
+                        '❌ RAG Server is offline. Make sure the server is running on port 2000.',
+                        startServer
+                    );
+                    if (result === startServer) {
+                        const terminal = vscode.window.createTerminal('RAG Server');
+                        terminal.sendText('./start_server_with_cloud.sh');
+                        terminal.show();
+                    }
+                }
+            });
+        })
+    );
+
     // Sync command
     context.subscriptions.push(
         vscode.commands.registerCommand('gemini.syncRAG', async () => {
@@ -384,4 +479,6 @@ Total Size: ${Math.round(documents.reduce((sum, d) => sum + d.size, 0) / 1024)}K
             ragProvider.refresh();
         })
     );
+
+    console.log('✅ COMMANDS: All commands registered successfully');
 }

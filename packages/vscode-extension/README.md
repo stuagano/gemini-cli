@@ -1,264 +1,235 @@
-# Gemini Documentation & Project Manager VS Code Extension
+# Gemini Documentation & Project Manager
 
-A comprehensive VS Code extension for managing documentation, tracking epics/stories, and integrating with RAG (Retrieval-Augmented Generation) datastores.
+A flexible VS Code extension for managing documentation, epics/stories, and RAG (Retrieval-Augmented Generation) integration. Works with any project structure!
 
-## Features
+## ✨ Features
 
-### 📊 Documentation Status Panel
-- **Real-time Progress Tracking**: Visual indicators showing documentation completion status
-- **Category Organization**: Documents organized by business case, product, architecture, manuals, quality, and project management
-- **Completion Metrics**: Percentage completion for each category
-- **Word Count Tracking**: Monitor document size and content growth
-- **Missing Requirements Detection**: Automatically identifies missing required sections
+### 📊 Documentation Status Tracking
+- **Multiple Structures**: GCAR methodology, flat structure, or custom categories
+- **Progress Visualization**: Shows completion percentages for each documentation category  
+- **Smart Analysis**: Analyzes document content to determine completeness
+- **Quick Actions**: Open, edit, and upload documents directly from the tree view
 
-### 🎯 Epics & Stories Management
-- **Hierarchical View**: Epics with nested stories
-- **Status Tracking**: Visual indicators for not-started, in-progress, and completed items
-- **Quick Creation**: Create new epics and stories from templates
-- **Progress Calculation**: Automatic completion percentage based on story status
-- **One-Click Status Updates**: Mark stories as complete with a single click
+### 📋 Epic & Story Management
+- **Project Tracking**: View and manage epics and stories
+- **Status Indicators**: Visual indicators for todo, in-progress, and completed items
+- **Template Generation**: Create new epics and stories with predefined templates
+- **Progress Tracking**: Automatic calculation of epic completion based on story status
 
-### 🗄️ RAG Datastore Integration
-- **Document Upload**: Easy upload of markdown files to RAG datastore
-- **Bulk Upload**: Upload entire folders with one command
-- **Search Integration**: Search across all indexed documents
-- **Upload Queue**: Visual tracking of pending uploads
-- **Index Statistics**: Monitor indexed documents and chunk counts
-- **Offline Support**: Local storage with automatic sync when server is available
+### 🔍 RAG Datastore Integration  
+- **Knowledge Base Management**: Upload and manage documents in your RAG datastore
+- **Multi-format Support**: Markdown, code, and documentation files
+- **Search Interface**: Search through your indexed knowledge base
+- **Batch Operations**: Upload entire folders or individual files
 
-### 📝 Markdown Editor Integration
-- **Template Generation**: Pre-filled templates for common document types
-- **Quick Edit**: Open and edit documents directly from the tree view
-- **Validation**: Real-time validation of document completeness
-- **Section Detection**: Automatic detection of document sections and structure
+## 🚀 Quick Install
 
-### 🎨 Rich Dashboard
-- **Overview Statistics**: Total documents, completion rate, word count
-- **Category Progress**: Visual progress bars for each documentation category
-- **RAG Metrics**: Upload status, indexing progress, storage usage
-- **Quick Actions**: One-click access to common tasks
-- **Auto-Refresh**: Configurable automatic refresh intervals
-
-## 🚀 Getting Started
-
-### Quick Install (Recommended)
 ```bash
-# One-click installation from gemini-cli root
-./scripts/install-vscode-extension.sh
+git clone <this-extension>
+cd vscode-extension
+./install.sh
 ```
 
-This automated installer will:
-- ✅ Check all prerequisites (VS Code, Node.js)
-- ✅ Install dependencies
-- ✅ Compile the extension
-- ✅ Optionally package as .vsix
-- ✅ Install in VS Code
-- ✅ Configure settings
+That's it! Reload VS Code and look for the 📖 Gemini Manager panel.
 
-### Manual Installation
+## ⚙️ Configuration
 
-#### Option 1: From Source
-```bash
-# Navigate to extension directory
-cd packages/vscode-extension
+Configure for your project structure:
 
-# Install dependencies
-npm install
-
-# Compile TypeScript
-npm run compile
-
-# Open in VS Code for testing
-code .
-# Press F5 to launch Extension Development Host
-```
-
-#### Option 2: From Marketplace (Coming Soon)
-```bash
-# When published to marketplace
-code --install-extension gemini-docs-manager
-```
-
-#### Option 3: From VSIX Package
-```bash
-# Build the package
-cd packages/vscode-extension
-npm run compile
-npx vsce package
-
-# Install the generated .vsix file
-code --install-extension gemini-docs-manager-*.vsix
-```
-
-### First Time Setup
-
-1. **Open your project** in VS Code
-2. **Click the Gemini Manager icon** in the Activity Bar (left sidebar)
-3. **Configure settings** (optional):
-   - Open Command Palette: `Cmd/Ctrl + Shift + P`
-   - Type: `Preferences: Open Settings (JSON)`
-   - Add:
-   ```json
-   {
-     "gemini.documentationPath": "docs",
-     "gemini.epicsPath": "docs/tasks",
-     "gemini.ragServerUrl": "http://localhost:2000"
-   }
-   ```
-4. **View the dashboard**: `Cmd/Ctrl + Shift + P` → "Gemini: Show Documentation Dashboard"
-
-### Required Project Structure
-```
-your-project/
-├── docs/                        # Documentation root
-│   ├── 0_business_case/        # Business documentation
-│   ├── 1_product/              # Product specs
-│   ├── 2_architecture/         # Technical architecture
-│   ├── 3_manuals/              # User manuals
-│   ├── 4_quality/              # Quality docs
-│   ├── 5_project_management/   # PM docs
-│   └── tasks/                  # Epics and stories
-│       ├── epic-*.md
-│       └── story-*.md
-└── .vscode/
-    └── settings.json           # Extension settings
-```
-
-## Usage
-
-### Viewing Documentation Status
-1. Click the Gemini Manager icon in the Activity Bar
-2. Expand the "Documentation Status" view
-3. Browse categories and documents
-4. Click on any document to open it
-
-### Managing Epics & Stories
-1. Open the "Epics & Stories" view
-2. Click the + icon to create new epics or stories
-3. Click on items to view/edit them
-4. Right-click stories to mark them complete
-
-### Using RAG Datastore
-1. Open the "RAG Datastore" view
-2. Right-click on any markdown file to upload it
-3. Use the upload folder button for bulk uploads
-4. Click search to query the knowledge base
-
-### Dashboard
-- Open Command Palette (Ctrl+Shift+P / Cmd+Shift+P)
-- Run "Gemini: Show Documentation Dashboard"
-- View comprehensive statistics and perform quick actions
-
-## Configuration
-
-Configure the extension in VS Code settings:
+### 1. GCAR Structure (Default)
+Perfect for enterprise projects following GCAR methodology:
 
 ```json
 {
-  "gemini.documentationPath": "docs",
-  "gemini.epicsPath": "docs/tasks",
-  "gemini.ragServerUrl": "http://localhost:2000",
-  "gemini.autoRefresh": true,
-  "gemini.refreshInterval": 30000
+  "gemini.documentationStructure": "gcar",
+  "gemini.documentationPath": "docs"
 }
 ```
 
-### Settings
+Expected structure:
+```
+docs/
+├── 0_business_case/
+├── 1_product/  
+├── 2_architecture/
+├── 3_manuals/
+├── 4_quality/
+├── 5_project_management/
+└── tasks/
+    ├── epic-*.md
+    └── story-*.md
+```
 
-- **`gemini.documentationPath`**: Path to documentation folder (default: "docs")
-- **`gemini.epicsPath`**: Path to epics and stories (default: "docs/tasks")
-- **`gemini.ragServerUrl`**: RAG server URL (default: "http://localhost:2000")
-- **`gemini.autoRefresh`**: Enable auto-refresh (default: true)
-- **`gemini.refreshInterval`**: Refresh interval in milliseconds (default: 30000)
+### 2. Flat Structure
+For simple projects with all docs in one folder:
 
-## Commands
+```json
+{
+  "gemini.documentationStructure": "flat",
+  "gemini.documentationPath": "docs"
+}
+```
 
-All commands are available through the Command Palette (Ctrl+Shift+P / Cmd+Shift+P):
+Expected structure:
+```
+docs/
+├── *.md (all documentation files)
+└── tasks/
+    ├── epic-*.md
+    └── story-*.md
+```
 
-- `Gemini: Refresh Documentation Status` - Refresh documentation tree
-- `Gemini: Open Document` - Open a documentation file
-- `Gemini: Edit Document` - Edit or create a new document
-- `Gemini: Upload to RAG Datastore` - Upload file to RAG
-- `Gemini: Upload Folder to RAG` - Upload entire folder
-- `Gemini: Refresh Epics & Stories` - Refresh project tracking
-- `Gemini: Create New Epic` - Create a new epic
-- `Gemini: Create New Story` - Create a new story
-- `Gemini: Mark Story Complete` - Mark a story as done
-- `Gemini: View RAG Status` - Check RAG server status
-- `Gemini: Search Knowledge Base` - Search indexed documents
-- `Gemini: Show Documentation Dashboard` - Open the dashboard
+### 3. Custom Structure
+Define your own categories:
 
-## Document Templates
+```json
+{
+  "gemini.documentationStructure": "custom",
+  "gemini.customCategories": [
+    {"name": "Requirements", "path": "docs/requirements", "icon": "📋"},
+    {"name": "Design", "path": "docs/design", "icon": "🎨"},
+    {"name": "API Docs", "path": "docs/api", "icon": "🔌"},
+    {"name": "Guides", "path": "docs/guides", "icon": "📚"}
+  ]
+}
+```
 
-The extension provides templates for:
-- Business Case
-- Product Requirements Document (PRD)
-- Architecture Documentation
-- API Specification
-- Testing Strategy
+### Other Settings
+```json
+{
+  "gemini.epicsPath": "docs/tasks",           // Path to epics/stories
+  "gemini.ragServerUrl": "http://localhost:2000", // RAG server URL
+  "gemini.autoRefresh": true,                 // Auto-refresh tree views
+  "gemini.refreshInterval": 30000             // Refresh every 30 seconds
+}
+```
 
-Templates include required sections and placeholder content to ensure consistency.
+## 📁 Adapting to Your Project
 
-## RAG Integration
+### Existing Project with Different Structure?
 
-### Server Setup
-The extension integrates with a RAG server for document indexing and search. 
+**Option 1: Use Custom Categories**
+```json
+{
+  "gemini.documentationStructure": "custom",
+  "gemini.customCategories": [
+    {"name": "README", "path": ".", "icon": "📖"},
+    {"name": "Docs", "path": "documentation", "icon": "📚"},
+    {"name": "Specs", "path": "specs", "icon": "📋"}
+  ]
+}
+```
 
-Default server: `http://localhost:2000`
+**Option 2: Use Flat Structure**
+```json
+{
+  "gemini.documentationStructure": "flat",
+  "gemini.documentationPath": "."
+}
+```
 
-### Offline Mode
-When the server is unavailable, documents are stored locally and automatically synced when the connection is restored.
+**Option 3: Create Symbolic Links**
+```bash
+# Link your existing docs to expected structure
+ln -s existing-docs docs
+ln -s project-tasks docs/tasks
+```
 
-## Keyboard Shortcuts
+### No Epic/Story Files?
+The extension works fine without them! The Epic & Story panel will just show an empty state.
 
-- `Ctrl+Shift+D` / `Cmd+Shift+D` - Show dashboard
-- `Ctrl+Shift+R` / `Cmd+Shift+R` - Refresh all views
-- `Ctrl+Shift+U` / `Cmd+Shift+U` - Upload current file to RAG
+To add epic/story tracking:
+1. Create a `docs/tasks/` folder (or configure `gemini.epicsPath`)
+2. Add files like `epic-user-auth.md` and `story-001-login.md`
+3. Use the "Create Epic" and "Create Story" commands for templates
 
-## Requirements
+## 🔧 Available Commands
 
-- VS Code 1.85.0 or higher
-- Node.js 18+ (for RAG server)
-- Markdown files for documentation
+**Documentation:**
+- `gemini.refreshDocStatus` - Refresh documentation status
+- `gemini.openDocument` - Open document 
+- `gemini.editDocument` - Edit/create document
 
-## Extension Settings
+**Epics & Stories:**
+- `gemini.createEpic` - Create new epic
+- `gemini.createStory` - Create new story  
+- `gemini.markStoryComplete` - Mark story complete
 
-This extension contributes the following settings:
+**RAG Integration:**
+- `gemini.uploadFileToRAG` - Upload single file
+- `gemini.uploadFolderToRAG` - Upload folder
+- `gemini.searchRAG` - Search knowledge base
+- `gemini.checkRAGServer` - Check server status
 
-* `gemini.enable`: Enable/disable this extension
-* `gemini.documentationPath`: Set the path to documentation
-* `gemini.ragServerUrl`: Configure RAG server URL
+## 🤖 RAG Server (Optional)
 
-## Known Issues
+The RAG integration is completely optional. If you don't have a RAG server:
+- The RAG panel will show helpful getting-started info
+- All other features work normally
+- No errors or warnings
 
-- RAG server must be running for upload/search features
-- Large folders may take time to upload
-- Some markdown syntax may not be properly indexed
+To enable RAG features, ensure your server provides:
+- `GET /documents` - List documents
+- `POST /upload` - Upload documents  
+- `GET /search?q=query` - Search
+- `GET /status` - Server status
 
-## Release Notes
+## 🚀 Installation for Other Projects
 
-### 1.0.0
+### Method 1: Copy Extension Files
+```bash
+# Copy the extension to your new project
+cp -r path/to/vscode-extension ./tools/vscode-extension
+cd tools/vscode-extension
+./install.sh
+```
 
-Initial release with:
-- Documentation status tracking
-- Epics and stories management
-- RAG datastore integration
-- Rich dashboard
-- Markdown editor integration
+### Method 2: Package and Distribute
+```bash
+# Package the extension
+npm run package
+# Copy the .vsix file to other projects
+cp gemini-docs-manager-1.0.0.vsix /path/to/other/project/
+# Install on the other project
+cd /path/to/other/project
+code --install-extension gemini-docs-manager-1.0.0.vsix
+```
 
-## Contributing
+### Method 3: VS Code Marketplace (Future)
+This extension could be published to the VS Code Marketplace for easy installation across projects.
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+## 🛠️ Customization
 
-## License
+The extension is designed for easy customization:
 
-MIT
+**Document Templates**: Edit `src/commands/index.ts` to modify epic/story templates
+**Document Analysis**: Modify `src/services/DocumentationService.ts` for custom document requirements  
+**Tree Providers**: Extend providers in `src/providers/` for additional data sources
+**RAG Integration**: Adapt `src/services/RAGService.ts` for different RAG implementations
 
-## Support
+## 📞 Troubleshooting
 
-For issues and feature requests, please visit:
-https://github.com/yourusername/gemini-docs-manager/issues
+**Extension not showing?**
+- Reload VS Code (Cmd+R)
+- Check Activity Bar for 📖 Gemini Manager icon
+- Verify extension is installed: `code --list-extensions`
 
----
+**No data in tree views?**
+- Check your folder structure matches configuration
+- Use refresh buttons in tree view headers
+- Verify paths in settings
 
-**Enjoy managing your documentation with Gemini!** 📚✨
+**RAG features not working?**
+- RAG server is optional - other features work without it
+- Check server URL in settings
+- Use "Check RAG Server Status" command
+
+## 🎯 Perfect For
+
+- ✅ Enterprise projects with structured documentation
+- ✅ Open source projects needing documentation tracking
+- ✅ Teams using epic/story methodology
+- ✅ Projects with knowledge management needs
+- ✅ Any project wanting better documentation visibility
+
+Works with any folder structure - just configure it for your needs!

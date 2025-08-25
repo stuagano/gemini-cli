@@ -1,7 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import axios from 'axios';
+import * as http from 'http';
+import * as https from 'https';
 
 export interface RAGDocument {
     id: string;
@@ -29,17 +30,98 @@ export class RAGService {
 
     constructor() {
         const config = vscode.workspace.getConfiguration('gemini');
-        this.serverUrl = config.get<string>('ragServerUrl') || 'http://localhost:2000';
+        let rawUrl = config.get<string>('ragServerUrl') || 'http://localhost:2000';
+        
+        // Clean and validate URL
+        rawUrl = rawUrl.trim().replace(/[.\s]+$/, '');
+        
+        try {
+            new URL(rawUrl); // Validate URL format
+            this.serverUrl = rawUrl;
+        } catch (error) {
+            console.warn(`Invalid RAG server URL: ${rawUrl}, using default`);
+            this.serverUrl = 'http://localhost:2000';
+        }
+    }
+
+    private getCleanServerUrl(): string {
+        return this.serverUrl.replace(/[.\s]+$/, '');
+    }
+
+    private async httpRequest(url: string, options: {
+        method?: string;
+        headers?: Record<string, string>;
+        body?: string;
+        timeout?: number;
+    } = {}): Promise<{ status: number; data: any; headers: Record<string, string> }> {
+        return new Promise((resolve, reject) => {
+            const urlObj = new URL(url);
+            const isHttps = urlObj.protocol === 'https:';
+            const lib = isHttps ? https : http;
+            
+            const requestOptions = {
+                hostname: urlObj.hostname,
+                port: urlObj.port || (isHttps ? 443 : 80),
+                path: urlObj.pathname + urlObj.search,
+                method: options.method || 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'VS Code Extension',
+                    ...options.headers
+                },
+                timeout: options.timeout || 5000
+            };
+
+            const req = lib.request(requestOptions, (res) => {
+                let data = '';
+                res.on('data', (chunk) => data += chunk);
+                res.on('end', () => {
+                    try {
+                        const parsedData = data ? JSON.parse(data) : null;
+                        resolve({
+                            status: res.statusCode || 0,
+                            data: parsedData,
+                            headers: res.headers as Record<string, string>
+                        });
+                    } catch (error) {
+                        resolve({
+                            status: res.statusCode || 0,
+                            data: data, // Return raw data if JSON parsing fails
+                            headers: res.headers as Record<string, string>
+                        });
+                    }
+                });
+            });
+
+            req.on('error', reject);
+            req.on('timeout', () => reject(new Error('Request timeout')));
+
+            if (options.body) {
+                req.write(options.body);
+            }
+
+            req.end();
+        });
     }
 
     async getDocuments(): Promise<RAGDocument[]> {
         try {
-            const response = await axios.get(`${this.serverUrl}/api/rag/documents`);
-            return response.data.documents || [];
-        } catch (error) {
-            console.error('Failed to fetch documents:', error);
-            // Return mock data if server is not available
-            return this.getMockDocuments();
+            const cleanUrl = this.getCleanServerUrl();
+            console.log(`RAGService: Fetching documents from ${cleanUrl}/api/rag/documents`);
+            const response = await this.httpRequest(`${cleanUrl}/api/rag/documents`, {
+                timeout: 5000
+            });
+            console.log('RAGService: Response received:', response.data);
+            if (response.status === 200 && response.data && response.data.documents) {
+                return response.data.documents;
+            }
+            // Return empty array if no valid response
+            console.log('RAGService: No documents found');
+            return [];
+        } catch (error: any) {
+            console.log('RAGService: Server not available');
+            // Return empty array - let the UI handle the empty state
+            return [];
         }
     }
 
@@ -49,7 +131,8 @@ export class RAGService {
         const fileType = this.detectFileType(fileName);
 
         try {
-            const response = await axios.post(`${this.serverUrl}/api/rag/upload`, {
+            const cleanUrl = this.getCleanServerUrl();
+            const body = JSON.stringify({
                 name: fileName,
                 content: content,
                 type: fileType,
@@ -57,6 +140,14 @@ export class RAGService {
                 metadata: {
                     uploadedBy: 'vscode-extension',
                     timestamp: new Date().toISOString()
+                }
+            });
+            
+            const response = await this.httpRequest(`${cleanUrl}/api/rag/upload`, {
+                method: 'POST',
+                body: body,
+                headers: {
+                    'Content-Type': 'application/json'
                 }
             });
 
@@ -70,11 +161,72 @@ export class RAGService {
         }
     }
 
+    async uploadFromUrl(url: string): Promise<void> {
+        try {
+            // First fetch the content from the URL
+            const response = await this.httpRequest(url, {
+                timeout: 30000,  // 30 second timeout for external URLs
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (compatible; Gemini RAG Uploader)'
+                }
+            });
+
+            if (response.status !== 200) {
+                throw new Error(`Failed to fetch URL: ${response.status}`);
+            }
+
+            const content = response.data;
+            const urlObj = new URL(url);
+            const fileName = urlObj.pathname.split('/').pop() || 'webpage.html';
+            const fileType = this.detectFileType(fileName);
+
+            // Now upload to RAG server
+            const cleanUrl = this.getCleanServerUrl();
+            const uploadBody = JSON.stringify({
+                name: fileName,
+                content: content,
+                type: fileType,
+                path: url,  // Use URL as the path
+                metadata: {
+                    uploadedBy: 'vscode-extension',
+                    timestamp: new Date().toISOString(),
+                    sourceUrl: url,
+                    contentType: response.headers['content-type']
+                }
+            });
+            
+            const uploadResponse = await this.httpRequest(`${cleanUrl}/api/rag/upload`, {
+                method: 'POST',
+                body: uploadBody,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (uploadResponse.status !== 200 && uploadResponse.status !== 201) {
+                throw new Error(`Upload failed with status ${uploadResponse.status}`);
+            }
+        } catch (error: any) {
+            if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+                throw new Error(`Cannot reach URL: ${url}`);
+            } else if (error.response?.status === 404) {
+                throw new Error(`URL not found: ${url}`);
+            } else {
+                throw new Error(`Failed to upload from URL: ${error.message || error}`);
+            }
+        }
+    }
+
     async searchDocuments(query: string, limit: number = 10): Promise<SearchResult[]> {
         try {
-            const response = await axios.post(`${this.serverUrl}/api/rag/search`, {
-                query,
-                limit
+            const cleanUrl = this.getCleanServerUrl();
+            const body = JSON.stringify({ query, limit });
+            const response = await this.httpRequest(`${cleanUrl}/api/rag/search`, {
+                method: 'POST',
+                body: body,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
             });
             return response.data.results || [];
         } catch (error) {
@@ -85,7 +237,10 @@ export class RAGService {
 
     async deleteDocument(documentId: string): Promise<void> {
         try {
-            await axios.delete(`${this.serverUrl}/api/rag/documents/${documentId}`);
+            const cleanUrl = this.getCleanServerUrl();
+            await this.httpRequest(`${cleanUrl}/api/rag/documents/${documentId}`, {
+                method: 'DELETE'
+            });
         } catch (error) {
             console.error('Failed to delete document:', error);
             throw error;
@@ -94,8 +249,9 @@ export class RAGService {
 
     async getDocumentContent(documentId: string): Promise<string> {
         try {
-            const response = await axios.get(`${this.serverUrl}/api/rag/documents/${documentId}/content`);
-            return response.data.content;
+            const cleanUrl = this.getCleanServerUrl();
+            const response = await this.httpRequest(`${cleanUrl}/api/rag/documents/${documentId}/content`);
+            return response.data.content || '';
         } catch (error) {
             console.error('Failed to fetch document content:', error);
             return '';
@@ -104,7 +260,10 @@ export class RAGService {
 
     async reindexDocuments(): Promise<void> {
         try {
-            await axios.post(`${this.serverUrl}/api/rag/reindex`);
+            const cleanUrl = this.getCleanServerUrl();
+            await this.httpRequest(`${cleanUrl}/api/rag/reindex`, {
+                method: 'POST'
+            });
         } catch (error) {
             console.error('Failed to reindex documents:', error);
             throw error;
@@ -189,7 +348,8 @@ export class RAGService {
 
     async checkServerStatus(): Promise<boolean> {
         try {
-            const response = await axios.get(`${this.serverUrl}/health`, { timeout: 5000 });
+            const cleanUrl = this.getCleanServerUrl();
+            const response = await this.httpRequest(`${cleanUrl}/health`, { timeout: 5000 });
             return response.status === 200;
         } catch {
             return false;

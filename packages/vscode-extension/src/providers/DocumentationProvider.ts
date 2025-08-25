@@ -18,7 +18,9 @@ export class DocumentationProvider implements vscode.TreeDataProvider<DocumentIt
     }
 
     getChildren(element?: DocumentItem): Thenable<DocumentItem[]> {
+        console.log('📁 DOC PROVIDER: getChildren called', element ? element.label : 'root');
         if (!vscode.workspace.workspaceFolders) {
+            console.log('❌ DOC PROVIDER: No workspace folder open');
             vscode.window.showInformationMessage('No workspace folder open');
             return Promise.resolve([]);
         }
@@ -37,14 +39,31 @@ export class DocumentationProvider implements vscode.TreeDataProvider<DocumentIt
     }
 
     private getDocumentCategories(workspaceRoot: string): DocumentItem[] {
-        const categories = [
-            { name: 'Business Case', path: 'docs/0_business_case', icon: '💼' },
-            { name: 'Product', path: 'docs/1_product', icon: '📦' },
-            { name: 'Architecture', path: 'docs/2_architecture', icon: '🏗️' },
-            { name: 'Manuals', path: 'docs/3_manuals', icon: '📚' },
-            { name: 'Quality', path: 'docs/4_quality', icon: '✅' },
-            { name: 'Project Management', path: 'docs/5_project_management', icon: '📊' }
-        ];
+        const config = vscode.workspace.getConfiguration('gemini');
+        const structure = config.get<string>('documentationStructure', 'gcar');
+        const docPath = config.get<string>('documentationPath', 'docs');
+        
+        let categories: Array<{name: string, path: string, icon: string}> = [];
+        
+        if (structure === 'gcar') {
+            categories = [
+                { name: 'Business Case', path: `${docPath}/0_business_case`, icon: '💼' },
+                { name: 'Product', path: `${docPath}/1_product`, icon: '📦' },
+                { name: 'Architecture', path: `${docPath}/2_architecture`, icon: '🏗️' },
+                { name: 'Manuals', path: `${docPath}/3_manuals`, icon: '📚' },
+                { name: 'Quality', path: `${docPath}/4_quality`, icon: '✅' },
+                { name: 'Project Management', path: `${docPath}/5_project_management`, icon: '📊' }
+            ];
+        } else if (structure === 'flat') {
+            categories = [
+                { name: 'Documentation', path: docPath, icon: '📝' }
+            ];
+        } else if (structure === 'custom') {
+            const customCategories = config.get<Array<{name: string, path: string, icon: string}>>('customCategories', []);
+            categories = customCategories.length > 0 ? customCategories : [
+                { name: 'Documentation', path: docPath, icon: '📝' }
+            ];
+        }
 
         return categories.map(cat => {
             const categoryPath = path.join(workspaceRoot, cat.path);
@@ -62,18 +81,33 @@ export class DocumentationProvider implements vscode.TreeDataProvider<DocumentIt
     }
 
     private getDocumentsInCategory(workspaceRoot: string, categoryLabel: string): DocumentItem[] {
-        // Extract category name from label
+        const config = vscode.workspace.getConfiguration('gemini');
+        const structure = config.get<string>('documentationStructure', 'gcar');
+        const docPath = config.get<string>('documentationPath', 'docs');
+        
+        // Extract category name from label (remove icon and percentage)
         const categoryName = categoryLabel.split(' ')[1];
-        const categoryMap: { [key: string]: string } = {
-            'Business': 'docs/0_business_case',
-            'Product': 'docs/1_product',
-            'Architecture': 'docs/2_architecture',
-            'Manuals': 'docs/3_manuals',
-            'Quality': 'docs/4_quality',
-            'Project': 'docs/5_project_management'
-        };
-
-        const categoryPath = path.join(workspaceRoot, categoryMap[categoryName] || 'docs');
+        
+        let categoryPath: string;
+        
+        if (structure === 'gcar') {
+            const categoryMap: { [key: string]: string } = {
+                'Business': `${docPath}/0_business_case`,
+                'Product': `${docPath}/1_product`,
+                'Architecture': `${docPath}/2_architecture`,
+                'Manuals': `${docPath}/3_manuals`,
+                'Quality': `${docPath}/4_quality`,
+                'Project': `${docPath}/5_project_management`
+            };
+            categoryPath = path.join(workspaceRoot, categoryMap[categoryName] || docPath);
+        } else if (structure === 'flat') {
+            categoryPath = path.join(workspaceRoot, docPath);
+        } else {
+            // Custom structure - find matching category
+            const customCategories = config.get<Array<{name: string, path: string, icon: string}>>('customCategories', []);
+            const category = customCategories.find(cat => cat.name === categoryName);
+            categoryPath = path.join(workspaceRoot, category?.path || docPath);
+        }
         
         if (!fs.existsSync(categoryPath)) {
             return [];

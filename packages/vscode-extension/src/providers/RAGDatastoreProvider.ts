@@ -36,14 +36,24 @@ export class RAGDatastoreProvider implements vscode.TreeDataProvider<RAGItem> {
 
     private async loadDocuments(): Promise<void> {
         try {
+            console.log('RAGDatastoreProvider: Loading documents from server...');
             this.documents = await this.ragService.getDocuments();
-        } catch (error) {
+            console.log(`RAGDatastoreProvider: Loaded ${this.documents.length} documents`);
+        } catch (error: any) {
             console.error('Failed to load RAG documents:', error);
             this.documents = [];
+            // Don't show error message, just silently use empty data
+            // The service will return mock data if server is unavailable
         }
     }
 
     private getRAGCategories(): RAGItem[] {
+        // Check if we have any documents
+        if (this.documents.length === 0 && this.uploadQueue.length === 0) {
+            // Show welcome/empty state
+            return this.getEmptyState();
+        }
+
         const categories = [
             { name: 'Uploaded Documents', icon: '📚', count: this.documents.length },
             { name: 'Upload Queue', icon: '⏳', count: this.uploadQueue.length },
@@ -58,6 +68,75 @@ export class RAGDatastoreProvider implements vscode.TreeDataProvider<RAGItem> {
                 cat.name
             );
         });
+    }
+
+    private getEmptyState(): RAGItem[] {
+        const items: RAGItem[] = [];
+        
+        // Welcome message
+        const welcome = new RAGItem(
+            '👋 Welcome to RAG Datastore',
+            vscode.TreeItemCollapsibleState.None,
+            'rag-welcome',
+            'welcome'
+        );
+        welcome.description = 'Get started by uploading documents';
+        items.push(welcome);
+
+        // Action items
+        const uploadFile = new RAGItem(
+            '📄 Click to upload a file',
+            vscode.TreeItemCollapsibleState.None,
+            'rag-action-upload-file',
+            'upload-file'
+        );
+        uploadFile.command = {
+            command: 'gemini.uploadFileToRAG',
+            title: 'Upload File to RAG'
+        };
+        uploadFile.tooltip = 'Upload a single file to the RAG datastore';
+        items.push(uploadFile);
+
+        const uploadFolder = new RAGItem(
+            '📁 Click to upload a folder',
+            vscode.TreeItemCollapsibleState.None,
+            'rag-action-upload-folder',
+            'upload-folder'
+        );
+        uploadFolder.command = {
+            command: 'gemini.uploadFolderToRAG',
+            title: 'Upload Folder to RAG'
+        };
+        uploadFolder.tooltip = 'Upload all markdown files from a folder';
+        items.push(uploadFolder);
+
+        const uploadUrl = new RAGItem(
+            '🔗 Click to add from URL',
+            vscode.TreeItemCollapsibleState.None,
+            'rag-action-upload-url',
+            'upload-url'
+        );
+        uploadUrl.command = {
+            command: 'gemini.uploadUrlToRAG',
+            title: 'Add Document from URL'
+        };
+        uploadUrl.tooltip = 'Fetch and index content from a URL';
+        items.push(uploadUrl);
+
+        const checkServer = new RAGItem(
+            '🔄 Check server connection',
+            vscode.TreeItemCollapsibleState.None,
+            'rag-action-check-server',
+            'check-server'
+        );
+        checkServer.command = {
+            command: 'gemini.checkRAGServer',
+            title: 'Check RAG Server'
+        };
+        checkServer.tooltip = 'Verify connection to the RAG server';
+        items.push(checkServer);
+
+        return items;
     }
 
     private getDocumentsInCategory(category: string): RAGItem[] {

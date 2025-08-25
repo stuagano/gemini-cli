@@ -30,7 +30,10 @@
     "gemini"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onView:documentation-status",
+    "onView:epics-stories", 
+    "onView:rag-datastore",
+    "onCommand:gemini.refreshDocStatus"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -87,9 +90,29 @@
         "icon": "$(cloud-upload)"
       },
       {
+        "command": "gemini.uploadFileToRAG",
+        "title": "Upload File to RAG",
+        "icon": "$(file)"
+      },
+      {
         "command": "gemini.uploadFolderToRAG",
         "title": "Upload Folder to RAG",
         "icon": "$(folder-opened)"
+      },
+      {
+        "command": "gemini.uploadUrlToRAG",
+        "title": "Upload from URL to RAG",
+        "icon": "$(link)"
+      },
+      {
+        "command": "gemini.checkRAGServer",
+        "title": "Check RAG Server Status",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "gemini.viewRAGDocument",
+        "title": "View RAG Document",
+        "icon": "$(file-text)"
       },
       {
         "command": "gemini.refreshEpics",
@@ -208,6 +231,25 @@
           "default": "docs/tasks",
           "description": "Path to epics and stories"
         },
+        "gemini.documentationStructure": {
+          "type": "string",
+          "enum": ["gcar", "flat", "custom"],
+          "default": "gcar",
+          "description": "Documentation structure type (GCAR methodology, flat, or custom)"
+        },
+        "gemini.customCategories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {"type": "string"},
+              "path": {"type": "string"},
+              "icon": {"type": "string"}
+            }
+          },
+          "default": [],
+          "description": "Custom documentation categories for non-GCAR projects"
+        },
         "gemini.ragServerUrl": {
           "type": "string",
           "default": "http://localhost:2000",
@@ -229,6 +271,7 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
+    "build": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
@@ -250,7 +293,6 @@
     "vsce": "^2.15.0"
   },
   "dependencies": {
-    "axios": "^1.6.5",
     "marked": "^11.1.1"
   }
 }
