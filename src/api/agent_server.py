@@ -32,7 +32,7 @@ from agents.enhanced.scout import EnhancedScout
 from agents.enhanced.po import EnhancedPO
 from nexus.core import CoreNexus
 from scout.indexer import initialize_indexer, get_indexer
-from rag_endpoints import router as rag_router
+from api.rag_endpoints import router as rag_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
