@@ -97,6 +97,9 @@ cd packages/vscode-extension && npm install && npm run compile
 📚 **[VS Code Extension Guide →](packages/vscode-extension/README.md)**
 
 ### 🏢 Enterprise Architecture Extension
+
+> **📚 What are Agents?** See [docs/WHAT_ARE_AGENTS.md](docs/WHAT_ARE_AGENTS.md) for a complete guide
+
 - **7 Specialized AI Agents**: Analyst, Architect, PM, Developer, QA, Scout, PO
 - **GCP Professional Development Methodology**: Documentation-driven development with business value tracking
 - **Scout-First Architecture**: Duplicate prevention and code analysis

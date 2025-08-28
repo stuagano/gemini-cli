@@ -1,5 +1,7 @@
 # 📜 Scripts Guide - Which Script to Use?
 
+> **New to Agents?** Read [What Are Agents?](docs/WHAT_ARE_AGENTS.md) first to understand what agents are and how they work.
+
 ## 🚀 Quick Start for New Team Members
 
 ### Primary Scripts (Use These!)
