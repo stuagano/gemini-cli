@@ -8,12 +8,24 @@
    - ✅ This is what you need to run the agents
    - Starts on port 2000
    - All 7 agents (analyst, pm, architect, developer, qa, scout, po)
+   - Automatically restarts on code changes (hot reload)
+   - Shows real-time logs from all agents
 
 2. **`./setup-enterprise.sh`** - Initial setup for enterprise features
    - Run this ONCE when you first clone the repo
-   - Installs Python dependencies
-   - Sets up virtual environment
-   - Tests the setup
+   - **What it does:**
+     - ✅ Checks prerequisites (Node.js, Python 3)
+     - ✅ Creates Python virtual environment
+     - ✅ Installs all Python dependencies (FastAPI, Vertex AI, etc.)
+     - ✅ Installs Node.js dependencies
+     - ✅ Verifies .env configuration exists
+     - ✅ Tests agent server can start
+     - ✅ Tests Vertex AI connection
+     - ✅ Creates CLI integration files
+   - **Prerequisites needed:**
+     - `.env` file with Google Cloud credentials
+     - Node.js v20+
+     - Python 3.9+
 
 ### Secondary Scripts (Special Cases)
 
@@ -51,16 +63,75 @@ gemini-cli/
 
 ### First Time Setup:
 ```bash
+# 1. Clone the repository
 git clone https://github.com/stuagano/gemini-cli.git
 cd gemini-cli
-./setup-enterprise.sh    # One-time setup
-./start_server.sh        # Start the agents
+
+# 2. Set up environment variables
+cp .env.example .env
+# Edit .env and add your Google Cloud credentials:
+# - GOOGLE_CLOUD_PROJECT=your-project-id
+# - GOOGLE_APPLICATION_CREDENTIALS=path/to/service-account.json
+# - VERTEX_AI_LOCATION=us-central1
+
+# 3. Run setup (installs dependencies, tests connections)
+./setup-enterprise.sh    
+
+# 4. Start the agent server
+./start_server.sh        
 ```
 
 ### Daily Development:
 ```bash
 ./start_server.sh        # That's it!
 ```
+
+## 🌐 Vertex AI & RAG Datastore Setup
+
+### What's Included:
+The system uses **Vertex AI** for embedding models and **local FAISS** for vector storage:
+
+1. **Embedding Models** (via Vertex AI):
+   - `text-embedding-004` for document embeddings
+   - `gemini-1.5-pro` for chat/completion
+
+2. **Vector Storage** (Local):
+   - FAISS index stored in `src/knowledge/data/`
+   - Automatic indexing of project documentation
+   - Scout agent indexes codebase for duplicate detection
+
+3. **RAG System Components**:
+   - Document ingestion pipeline
+   - Vector similarity search
+   - Knowledge base querying
+   - Real-time document updates
+
+### Vertex AI Configuration:
+The `scripts/setup-vertex-ai.py` script (called by setup-enterprise.sh) handles:
+- Validating Google Cloud credentials
+- Testing Vertex AI API access
+- Configuring embedding endpoints
+- Setting up model deployments
+
+### Environment Variables Required:
+```bash
+# Google Cloud / Vertex AI
+GOOGLE_CLOUD_PROJECT=your-project-id
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+VERTEX_AI_LOCATION=us-central1
+
+# Optional: Override default models
+EMBEDDING_MODEL=text-embedding-004
+CHAT_MODEL=gemini-1.5-pro
+```
+
+### RAG Datastore Endpoints:
+Once running, the RAG system provides:
+- `POST /api/v1/knowledge/query` - Query the knowledge base
+- `POST /api/v1/knowledge/documents` - Add new documents
+- `GET /api/v1/knowledge/search` - Search documents
+- `POST /api/v1/knowledge/reindex` - Rebuild the index
+- `GET /api/v1/knowledge/stats` - Get datastore statistics
 
 ### API Endpoints:
 - Health Check: http://localhost:2000/api/v1/health
