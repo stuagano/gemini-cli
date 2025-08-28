@@ -4,28 +4,28 @@
 
 ### Primary Scripts (Use These!)
 
-1. **`./start_server.sh`** - Start the BMAD agent server
+1. **`./start_agent_server.sh`** - Start the BMAD agent server
    - ✅ This is what you need to run the agents
    - Starts on port 2000
    - All 7 agents (analyst, pm, architect, developer, qa, scout, po)
    - Automatically restarts on code changes (hot reload)
    - Shows real-time logs from all agents
 
-2. **`./setup-enterprise.sh`** - Initial setup for enterprise features
+2. **`./setup-enterprise.sh`** - Initial setup (NO GCP REQUIRED!)
    - Run this ONCE when you first clone the repo
    - **What it does:**
      - ✅ Checks prerequisites (Node.js, Python 3)
      - ✅ Creates Python virtual environment
-     - ✅ Installs all Python dependencies (FastAPI, Vertex AI, etc.)
+     - ✅ Installs all Python dependencies
      - ✅ Installs Node.js dependencies
-     - ✅ Verifies .env configuration exists
+     - ✅ Creates .env file from template
      - ✅ Tests agent server can start
-     - ✅ Tests Vertex AI connection
+     - ✅ Tests Vertex AI (if configured, otherwise skips)
      - ✅ Creates CLI integration files
-   - **Prerequisites needed:**
-     - `.env` file with Google Cloud credentials
+   - **Only requires:**
      - Node.js v20+
      - Python 3.9+
+   - **GCP is OPTIONAL** - agents work fine without it!
 
 ### Secondary Scripts (Special Cases)
 
@@ -50,8 +50,8 @@
 
 ```
 gemini-cli/
-├── start_server.sh          ✅ Main script to run agents
-├── setup-enterprise.sh      ✅ Initial setup script
+├── start_agent_server.sh    ✅ Main script to run agents
+├── setup-enterprise.sh      ✅ Initial setup script (no GCP required)
 ├── scripts/
 │   ├── sync-upstream.sh    ⚙️ Sync with upstream
 │   └── [other scripts]      ❌ Internal/build scripts
@@ -67,29 +67,33 @@ gemini-cli/
 git clone https://github.com/stuagano/gemini-cli.git
 cd gemini-cli
 
-# 2. Set up environment variables
-cp .env.example .env
-# Edit .env and add your Google Cloud credentials:
-# - GOOGLE_CLOUD_PROJECT=your-project-id
-# - GOOGLE_APPLICATION_CREDENTIALS=path/to/service-account.json
-# - VERTEX_AI_LOCATION=us-central1
-
-# 3. Run setup (installs dependencies, tests connections)
+# 2. Run setup (creates .env, installs dependencies)
 ./setup-enterprise.sh    
 
-# 4. Start the agent server
-./start_server.sh        
+# 3. Start the agent server
+./start_agent_server.sh
+
+# 4. (OPTIONAL) Add Google Cloud later if needed:
+# Edit .env and add:
+# - GOOGLE_CLOUD_PROJECT=your-project-id
+# - GOOGLE_APPLICATION_CREDENTIALS=path/to/service-account.json        
 ```
 
 ### Daily Development:
 ```bash
-./start_server.sh        # That's it!
+./start_agent_server.sh  # That's it!
 ```
 
-## 🌐 Vertex AI & RAG Datastore Setup
+## 🌐 OPTIONAL: Vertex AI & Enhanced RAG Setup
 
-### What's Included:
-The system uses **Vertex AI** for embedding models and **local FAISS** for vector storage:
+### Basic Mode (No GCP Required):
+- ✅ All 7 agents work perfectly
+- ✅ Local document storage and search
+- ✅ Code analysis and duplication detection
+- ✅ Full API functionality
+
+### Enhanced Mode (With GCP - Optional):
+If you have Google Cloud access, you can enable:
 
 1. **Embedding Models** (via Vertex AI):
    - `text-embedding-004` for document embeddings
@@ -113,7 +117,7 @@ The `scripts/setup-vertex-ai.py` script (called by setup-enterprise.sh) handles:
 - Configuring embedding endpoints
 - Setting up model deployments
 
-### Environment Variables Required:
+### Environment Variables (OPTIONAL for GCP):
 ```bash
 # Google Cloud / Vertex AI
 GOOGLE_CLOUD_PROJECT=your-project-id
@@ -140,7 +144,7 @@ Once running, the RAG system provides:
 
 ## 🔧 Troubleshooting
 
-### If `start_server.sh` fails:
+### If `start_agent_server.sh` fails:
 1. Check Python virtual environment: `source venv/bin/activate`
 2. Install dependencies: `pip install -r requirements.txt`
 3. Check port 2000: `lsof -i :2000`
@@ -148,7 +152,7 @@ Once running, the RAG system provides:
 ### If agents aren't responding:
 1. Check health: `curl http://localhost:2000/api/v1/health`
 2. Check logs in terminal where you ran `start_server.sh`
-3. Restart the server: `Ctrl+C` then `./start_server.sh`
+3. Restart the server: `Ctrl+C` then `./start_agent_server.sh`
 
 ## 📝 Notes
 

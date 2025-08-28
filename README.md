@@ -185,7 +185,7 @@ gemini-cli/
 
 ```bash
 # Start the agent server
-./start_server.sh
+./start_agent_server.sh
 
 # Access the API
 curl http://localhost:8000/api/v1/health

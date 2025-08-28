@@ -178,7 +178,7 @@ The following directories and files are protected during upstream merges:
 - [ ] Run `npm install` to update dependencies
 - [ ] Run `npm run build` to verify build
 - [ ] Test BMAD features still work
-- [ ] Verify agent server: `./start_server.sh`
+- [ ] Verify agent server: `./start_agent_server.sh`
 - [ ] Review changes: `git log --oneline upstream/main ^HEAD`
 
 See `SYNC_GUIDE.md` for detailed sync instructions.
@@ -345,7 +345,7 @@ SyntaxError: f-string: valid expression required before '}'
 - Example fix: `tags={{'filter_count': len(filters or {})}}` → `tags={'filter_count': len(filters or [])}`
 
 ### BMAD Agent Server Startup Issues
-If `./start_server.sh` fails:
+If `./start_agent_server.sh` fails:
 1. Check Python virtual environment activation
 2. Verify all dependencies installed: `pip install fastapi uvicorn websockets python-multipart pydantic psutil coverage pytest pytest-cov aiofiles redis python-json-logger beautifulsoup4 requests`
 3. Ensure `PYTHONPATH` includes `src/` directory

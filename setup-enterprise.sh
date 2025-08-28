@@ -109,9 +109,13 @@ configure_environment() {
     if [[ -f ".env" ]]; then
         log_success "Environment configuration already exists"
     else
-        log_error "No .env file found. Please run the environment configuration first."
-        echo "Your .env file should already be configured with Vertex AI settings."
-        exit 1
+        log_warning "No .env file found. Creating from .env.example..."
+        if [[ -f ".env.example" ]]; then
+            cp .env.example .env
+            log_success "Created .env file - you can add Google Cloud credentials later if needed"
+        else
+            log_warning "No .env.example found - agent server will run with defaults"
+        fi
     fi
 }
 
@@ -125,10 +129,17 @@ test_setup() {
     timeout 10s python src/api/agent_server.py --test-mode > /dev/null 2>&1 || true
     log_success "Agent server test completed"
     
-    # Test Vertex AI connection
-    log_info "Testing Vertex AI connection..."
-    python scripts/setup-vertex-ai.py --test-only > /dev/null 2>&1
-    log_success "Vertex AI connection test completed"
+    # Test Vertex AI connection (optional)
+    if [[ -f ".env" ]] && grep -q "GOOGLE_CLOUD_PROJECT=your-gcp-project-id" .env; then
+        log_warning "Google Cloud not configured - RAG features will use local mode"
+    elif [[ -f ".env" ]] && grep -q "GOOGLE_CLOUD_PROJECT" .env; then
+        log_info "Testing Vertex AI connection (optional)..."
+        if python scripts/setup-vertex-ai.py --test-only > /dev/null 2>&1; then
+            log_success "Vertex AI connection test completed"
+        else
+            log_warning "Vertex AI connection failed - RAG will work in local mode"
+        fi
+    fi
 }
 
 # Create integration files
@@ -227,8 +238,8 @@ show_usage() {
     echo "   gemini agent po \"optimize this feature for business value\""
     echo ""
     echo "3. Start Services:"
-    echo "   # Start agent server (automatic when using agents)"
-    echo "   python src/api/agent_server.py"
+    echo "   # Start agent server"
+    echo "   ./start_agent_server.sh"
     echo ""
     echo "   # Start monitoring (optional)"
     echo "   cd monitoring/deployment"
