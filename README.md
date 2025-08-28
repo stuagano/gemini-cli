@@ -24,7 +24,7 @@ Instead of one general AI assistant, you get an entire development team where ea
 ## 🤔 Why This Exists
 
 ### The Problem
-Generic AI gives generic answers. Ask ChatGPT to "build an auth system" and you get a messy mix of architecture advice, code snippets, and maybe some tests - all jumbled together.
+Generic AI assistants give mixed responses combining architecture, code, and testing advice all in one unfocused answer.
 
 ### The Solution  
 Specialized agents that maintain consistent expertise and perspective. Each agent thinks and responds like a real team member would.
